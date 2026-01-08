@@ -2,16 +2,27 @@
 
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function AppBar() {
   const { data: session } = useSession();
+  const router = useRouter()
 
   return (
     <div className="border-b px-4 py-3 flex justify-between items-center">
       {/* Logo */}
-      <div className="text-xl font-bold tracking-wide">
-        DCEX
-      </div>
+      <button
+      onClick={() => {
+        if (session?.user) {
+          router.push("/dashboard");
+        } else {
+          router.push("/");
+        }
+      }}
+      className="text-xl font-bold tracking-wide cursor-pointer"
+    >
+      DCEX
+    </button>
 
       {/* Auth Actions */}
       <div className="flex items-center gap-3">

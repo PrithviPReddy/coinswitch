@@ -25,7 +25,7 @@ export default function Hero() {
           {!session?.user ? (
             <>
               <button
-                onClick={() => signIn("google")}
+                onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
                 className="flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition"
               >
                 Sign up with Google
