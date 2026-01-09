@@ -43,12 +43,22 @@ export default function AppBar() {
             </Link>
           </>
         ) : (
-          <button
-            onClick={() => signOut({ callbackUrl: "/" })}
-            className="px-4 py-2 text-sm font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 transition"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="px-5 py-2 text-sm font-medium rounded-md bg-blue-600 text-white shadow-sm hover:bg-blue-700 transition"
+            >
+              Dashboard
+            </button>
+
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className="px-4 py-2 text-sm font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 transition"
+            >
+              Logout
+            </button>
+          </div>
+
         )}
       </div>
     </div>
