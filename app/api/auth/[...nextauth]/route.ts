@@ -30,10 +30,6 @@ const handler = NextAuth({
       // }
 
       const keyPair = Keypair.generate();
-      const pub = keyPair.publicKey.toBase58()
-      console.log("---------------------------------------------------")
-      console.log(pub) 
-      console.log("---------------------------------------------------")
 
       await db.user.create({
         data: {
