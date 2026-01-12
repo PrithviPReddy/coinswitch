@@ -1,9 +1,11 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
 
 export function ProfileCard({ publicKey }: { publicKey: string }) {
   const { data: session } = useSession();
+  const [copied,setCopied] = useState(false)
 
   return (
     <div className="w-full max-w-4xl mx-auto bg-white rounded-2xl shadow-sm p-8">
@@ -34,7 +36,13 @@ export function ProfileCard({ publicKey }: { publicKey: string }) {
           <p className="text-4xl font-bold text-slate-900">$0.00 USD</p>
         </div>
 
-        <button className="px-4 py-2 rounded-lg bg-gray-100 text-sm font-medium text-gray-600 hover:bg-gray-200 transition">
+        <button 
+        className="px-4 py-2 rounded-lg bg-black text-sm font-medium text-blue-100 hover:bg-gray-200 transition"
+        onClick={async () => {
+          navigator.clipboard.writeText(publicKey)
+          setCopied(true)
+          setTimeout(() => setCopied(false),2000)
+        }}>
           Wallet Address
         </button>
       </div>
@@ -43,7 +51,11 @@ export function ProfileCard({ publicKey }: { publicKey: string }) {
       <div className="mt-4 bg-slate-50 rounded-lg px-4 py-3 flex items-center justify-between text-sm font-mono text-slate-600">
         <span className="truncate">{publicKey}</span>
         <button
-          onClick={() => navigator.clipboard.writeText(publicKey)}
+          onClick={() => {
+            navigator.clipboard.writeText(publicKey)
+            setCopied(true)
+            setTimeout(() => setCopied(false),2000)
+          }}
           className="ml-4 text-blue-600 hover:underline text-xs"
         >
           Copy
@@ -70,6 +82,14 @@ export function ProfileCard({ publicKey }: { publicKey: string }) {
           Add Funds
         </button>
       </div>
+      {copied && (
+      <div className="fixed bottom-6 right-6 z-50">
+        <div className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white shadow-lg animate-fade-in">
+          <span>Wallet address copied</span>
+        </div>
+  </div>
+)}
+
     </div>
   );
 }
