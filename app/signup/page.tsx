@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { GoogleSignInButton} from "../components/Button";
+import { GoogleSignUpButton} from "../components/Button";
 
 export default function SignUpPage() {
   const [email, setEmail] = useState("");
@@ -13,10 +13,10 @@ export default function SignUpPage() {
       <div className="w-full max-w-md bg-white rounded-xl shadow-md p-8">
         {/* Heading */}
         <h1 className="text-2xl font-semibold text-slate-900 text-center">
-          Sign in to DCEX
+          Create an Account 
         </h1>
         <p className="mt-2 text-sm text-slate-600 text-center">
-          Access your account securely
+          Create your account securely
         </p>
 
         {/* Form */}
@@ -43,20 +43,20 @@ export default function SignUpPage() {
           <button
             className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 transition"
           >
-            Sign in
+            Sign Up
           </button>
 
-          <GoogleSignInButton/>
+          <GoogleSignUpButton/>
         </div>
 
         {/* Footer */}
         <p className="mt-6 text-center text-sm text-slate-600">
-          Create account?{" "}
+          Already have an account?{" "}
           <Link
             href="/signup"
             className="text-blue-600 font-medium hover:underline"
           >
-            Sign up
+            Sign In
           </Link>
         </p>
       </div>
