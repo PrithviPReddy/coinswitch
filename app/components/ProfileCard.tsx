@@ -2,13 +2,11 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Loading, Warning } from "./SomePages";
-import { PrimaryButton, TabButton } from "./Button";
-import { TokenWithBalance, useTokens } from "../hooks/useTokens";
-import { TokenList } from "./TokenList";
-
-
+import { useState } from "react";
+import { Loading, Warning } from "./DifferentPages";
+import { TabButton } from "./Button";
+import { useTokens } from "../hooks/useTokens";
+import { Assets, Swap } from "./TabPages";
 
 type Tab = "token" | "send" | "add_funds" | "swap" | "withdraw"
 const tabs : { id : Tab , name : string}[] = [
@@ -101,7 +99,7 @@ export function ProfileCard({ publicKey }: { publicKey: string }) {
       {/* Assets */}
       <div className="mt-10 border-t pt-6 text-center text-slate-500">
         <div className={`${selectedTab === "token" ? "visible" : "hidden"}`}><Assets tokenBalances={tokenBalances} loading={loading} publicKey={publicKey} /> </div>
-            {/* <div className={`${selectedTab === "swap" ? "visible" : "hidden"}`}><Swap tokenBalances={tokenBalances} publicKey={publicKey} /> </div> */}
+            <div className={`${selectedTab === "swap" ? "visible" : "hidden"}`}><Swap tokenBalances={tokenBalances} publicKey={publicKey} /> </div>
             <div className={`${(selectedTab !== "swap" && selectedTab !== "token") ? "visible" : "hidden"}`}><Warning /> </div>
         <button className="mt-5 px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">
           Add Funds
@@ -117,31 +115,4 @@ export function ProfileCard({ publicKey }: { publicKey: string }) {
 
     </div>
   );
-}
-function Assets({tokenBalances, loading}: {
-    publicKey: string;
-    tokenBalances: {
-        totalBalance: number,
-        tokens: TokenWithBalance[]
-    } | null;
-    loading: boolean;
-}) {
-    const [copied, setCopied] = useState(false);
-
-    useEffect(() => {
-        if (copied) {
-            const timeout = setTimeout(() => {
-                setCopied(false)
-            }, 3000)
-            return () => {
-                clearTimeout(timeout);
-            }
-        }
-    }, [copied])
-
-    if (loading) {
-        return <Loading/>
-    }
-
-    return <TokenList tokens={tokenBalances?.tokens || []} />
 }

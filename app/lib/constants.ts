@@ -18,7 +18,7 @@ export interface TokenDetails {
     mint :string,
     native :boolean,
     image:string,
-    price : string
+    price?: string
 }
 
 export const SUPPORTED_TOKENS = [
@@ -41,6 +41,9 @@ export const SUPPORTED_TOKENS = [
         image :"/tokens/Sol.png"
     },
 ] as const;
+
+export type SupportedToken = typeof SUPPORTED_TOKENS[number];
+
 
 export const connection = new Connection("https://api.mainnet-beta.solana.com");
 
