@@ -1,32 +1,78 @@
-import { NextRequest } from "next/server";
-import { getAccount, getAssociatedTokenAddress } from "@solana/spl-token"
-import { connection, SUPPORTED_TOKENS } from "@/app/lib/constants";
-import { PublicKey } from "@solana/web3.js";
+import { NextRequest, NextResponse } from "next/server";
+import { getAccount, getAssociatedTokenAddress, getMint } from "@solana/spl-token"
+import { connection, getSupportedTokens } from "@/app/lib/constants";
+import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 
-export async function GET(req:NextRequest, res:NextRequest){
-    const { searchParams } = new URL(req.url)
-    const address = searchParams.get('address')!()
-    const owner = new PublicKey(address)
-    const balances = await Promise.all(
-        SUPPORTED_TOKENS.map(token => {
-            const mint = new PublicKey(token.mint);
-            return getAssociatedTokenAddress(mint, owner);
-        })
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const addressParam = searchParams.get("address");
+
+  if (!addressParam) {
+    return NextResponse.json(
+      { error: "address query param is required" },
+      { status: 400 }
     );
-    //ATA  = Associated token account 
-    //PDA  = PRogram derived address
+  }
 
+  let owner: PublicKey;
 
+  try {
+    owner = new PublicKey(addressParam);
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid Solana address" },
+      { status: 400 }
+    );
+  }
+
+  const supportedTokens = await getSupportedTokens();
+
+  const balances = await Promise.all(
+    supportedTokens.map(token => getAccountBalance(token, owner))
+  );
+
+  const tokens = supportedTokens.map((token, index) => {
+  const balance = balances[index];
+  const price = Number(token.price ?? 0);
+
+  return {
+      ...token,
+      balance,
+      usdBalance: balance * price
+    };
+  });
+
+  const totalBalance = tokens.reduce(
+    (acc, val) => acc + val.usdBalance,
+    0
+  );
+
+  return NextResponse.json({
+    tokens,
+    totalBalance
+  });
 
 }
 
-async function getAccountBalance(token : { 
-    name: string,
-    mint : string
-}, address : string){
 
-    const ata = await getAssociatedTokenAddress(new PublicKey(token.mint),new PublicKey(address))
-    const account = await getAccount(connection,ata)
+async function getAccountBalance(
+  token: {
+    name: string;
+    mint: string;
+    native: boolean;
+  },
+  owner: PublicKey
+) {
+  if (token.native) {
+    const balance = await connection.getBalance(owner);
+    return balance / LAMPORTS_PER_SOL;
+  }
 
+  const mint = new PublicKey(token.mint);
+  const ata = await getAssociatedTokenAddress(mint, owner);
 
+  const account = await getAccount(connection, ata);
+  const mintInfo = await getMint(connection, mint);
+
+  return Number(account.amount) / 10 ** mintInfo.decimals;
 }

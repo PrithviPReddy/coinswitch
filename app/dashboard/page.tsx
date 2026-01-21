@@ -27,7 +27,7 @@ async function getUserWallet(){
 
 export default async function dashboard(){
     const userWallet = await getUserWallet()
-    const publicKey = userWallet.userWallet?.publicKey
+    const publicKey= userWallet.userWallet?.publicKey
     
     if( userWallet.error || !publicKey ){
         return<div>
@@ -35,6 +35,6 @@ export default async function dashboard(){
         </div>
     }
 
-    return <ProfileCard publicKey= {userWallet.userWallet?.publicKey}/>
+    return <ProfileCard publicKey= {userWallet.userWallet?.publicKey!}/>
 
 }
