@@ -1,36 +1,148 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+CoinSwitch – Crypto Swap Web Application
 
-## Getting Started
+CoinSwitch is a full-stack web application that demonstrates a simplified cryptocurrency token swap workflow, built using modern web technologies.
+This project was developed as a personal portfolio project to showcase frontend, backend, and API integration skills.
 
-First, run the development server:
+🚀 Features
+
+Token listing and selection
+
+Real-time quote fetching
+
+Token swap execution flow
+
+Authentication using NextAuth
+
+Modular UI components
+
+API routes using Next.js App Router
+
+TypeScript-based codebase
+
+🧱 Tech Stack
+Frontend
+
+Next.js (App Router)
+
+React
+
+TypeScript
+
+CSS / Tailwind (if applicable)
+
+Backend
+
+Next.js API Routes
+
+NextAuth for authentication
+
+Tooling
+
+ESLint
+
+TypeScript
+
+Node.js
+
+📂 Project Structure
+
+```plaintext
+app/
+├── api/ # Backend API routes
+├── components/ # Reusable UI components
+├── auth/ # Authentication logic
+├── page.tsx # Main application entry
+└── layout.tsx # App layout
+config/
+├── prisma.config.ts
+└── eslint / tsconfig
+```
+
+🔁 Application Flow
+
+User authenticates using NextAuth
+
+User selects a source and destination token
+
+Application fetches a quote via API
+
+Swap request is processed via backend route
+
+Result is returned and displayed to the user
+
+🔐 Authentication
+
+Authentication is handled using NextAuth, providing a secure and extensible authentication layer.
+Protected routes can be extended to enforce authorization for sensitive operations such as swaps.
+
+⚙️ Setup Instructions
+1. Clone the repository
+
+```bash
+git clone https://github.com/PrithviPReddy/coinswitch.git
+
+cd coinswitch
+```
+
+2. Install dependencies
+
+```bash
+npm install
+```
+
+3. Configure environment variables
+
+Create a .env file and add the required values:
+
+```env
+NEXTAUTH_SECRET=your_secret_here
+NEXTAUTH_URL=http://localhost:3000
+
+```
+
+4. Run the development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
+ in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+🧪 Current Limitations
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Minimal input validation
 
-## Learn More
+No rate limiting on APIs
 
-To learn more about Next.js, take a look at the following resources:
+No caching for quotes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Limited UI error handling
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+These are intentional trade-offs for an MVP-level personal project.
 
-## Deploy on Vercel
+📈 Future Improvements
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Add schema validation using Zod
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Introduce caching for token and quote APIs
+
+Improve UI error and loading states
+
+Add unit and integration tests
+
+Improve documentation and architecture layering
+
+🎓 Academic Context
+
+This project was built by a 3rd-year Computer Science student as a personal resume project to demonstrate:
+
+Real-world framework usage
+
+Full-stack understanding
+
+Clean and maintainable code practices
+
+📜 License
+
+This project is for educational and portfolio purposes.
