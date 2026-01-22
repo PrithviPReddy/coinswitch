@@ -92,22 +92,6 @@ npm run dev
 Open http://localhost:3000
  in your browser.
 
-# 🧪 Current Limitations
-
-- Minimal input validation
-- No rate limiting on APIs
-- No caching for quotes
-- Limited UI error handling
-
-These are intentional trade-offs for an MVP-level personal project.
-
-# 📈 Future Improvements
-
-- Add schema validation using Zod
-- Introduce caching for token and quote APIs
-- Improve UI error and loading states
-- Add unit and integration tests
-- Improve documentation and architecture layering
 
 # 🎓 Academic Context
 
@@ -119,4 +103,4 @@ This project was built by a 3rd-year Computer Science student as a personal resu
 
 # 📜 License
 
-This project is for educational and portfolio purposes.
+This project is for educational purposes.
