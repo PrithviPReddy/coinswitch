@@ -57,9 +57,10 @@ export async function GET(req: NextRequest) {
 
 async function getAccountBalance(
   token: {
-    name: string;
-    mint: string;
-    native: boolean;
+    name: string
+    mint: string
+    native: boolean
+    decimals : number
   },
   owner: PublicKey
 ) {
@@ -72,7 +73,6 @@ async function getAccountBalance(
   const ata = await getAssociatedTokenAddress(mint, owner);
 
   const account = await getAccount(connection, ata);
-  const mintInfo = await getMint(connection, mint);
 
-  return Number(account.amount) / 10 ** mintInfo.decimals;
+  return Number(account.amount) / 10 ** token.decimals;
 }

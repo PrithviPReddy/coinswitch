@@ -1,9 +1,11 @@
 "use client"
-
+/* eslint-disable */
 import { useEffect, useState } from "react";
 import { TokenWithBalance } from "../hooks/useTokens";
 import { Loading } from "./DifferentPages";
 import { SUPPORTED_TOKENS, SupportedToken, TokenDetails } from "../lib/constants";
+import axios from "axios";
+import { useJupiterQuote } from "../hooks/useJupiterQuote";
 
 export  function Assets({tokenBalances, loading}: {
     publicKey: string;
@@ -93,14 +95,27 @@ export function Swap({tokenBalances, publicKey}: {
 
     const [baseAsset , setBaseAsset]  = useState<SupportedToken>(SUPPORTED_TOKENS[0])
     const [quoteAsset, setQuoteAsset]  = useState<SupportedToken>(SUPPORTED_TOKENS[2])
+    const [baseAmount, setBaseAmount] = useState<string | null>()
+    //@ts-ignore
+    const { quoteAmount, setQuoteAmount,loading } = useJupiterQuote({baseAsset,quoteAsset,baseAmount})
+                                  
 
+
+    
     return (
   <div className="relative max-w-md mx-auto bg-white rounded-2xl shadow-sm p-4 space-y-3">
     {/* Base asset */}
     <SwapInputRow
+      amount = {baseAmount!}
+      onAmountChange ={(value : string) => {
+        setBaseAmount(value)
+      }}
       selectedToken={baseAsset}
       otherSelectedToken={quoteAsset}
       onSelect={setBaseAsset}
+      showBalance = {true}
+      tokenBalances={tokenBalances}
+      
     />
 
     {/* Swap button */}
@@ -109,6 +124,8 @@ export function Swap({tokenBalances, publicKey}: {
         onClick={() => {
           setBaseAsset(quoteAsset);
           setQuoteAsset(baseAsset);
+          setBaseAmount(null)
+          setQuoteAmount(null)
         }}
         className="z-10 flex items-center justify-center h-8 w-8 rounded-full border bg-white text-slate-600 hover:bg-slate-100 transition shadow-sm"
         aria-label="Swap tokens"
@@ -119,6 +136,7 @@ export function Swap({tokenBalances, publicKey}: {
 
     {/* Quote asset */}
     <SwapInputRow
+      amount = {quoteAmount!}
       selectedToken={quoteAsset}
       otherSelectedToken={baseAsset}
       onSelect={setQuoteAsset}
@@ -129,19 +147,31 @@ export function Swap({tokenBalances, publicKey}: {
 
 }
 
-
 function SwapInputRow({
+  amount,
+  onAmountChange,
   selectedToken,
   otherSelectedToken,
   onSelect,
+  showBalance = false,
+  tokenBalances,
 }: {
+  amount? : string
+  onAmountChange? : (value:string) => void
   selectedToken: SupportedToken;
   otherSelectedToken: SupportedToken;
   onSelect: (asset: SupportedToken) => void;
+  showBalance?: boolean;
+  tokenBalances?: {
+    tokens: TokenWithBalance[];
+  } | null
 }) {
+  const tokenBalance = showBalance
+    ? tokenBalances?.tokens.find((t) => t.mint === selectedToken.mint)
+    : null
+
   return (
     <div className="relative border rounded-xl p-4 bg-white">
-      {/* Top row */}
       <div className="flex justify-between items-center">
         <AssetSelector
           selectedToken={selectedToken}
@@ -153,11 +183,26 @@ function SwapInputRow({
           type="number"
           placeholder="0.00"
           className="text-right text-lg font-medium outline-none w-32"
+          value = {amount ?? ''}
+          onChange={(e) => {
+            onAmountChange?.(e.target.value)
+          }}
         />
       </div>
+
+      {showBalance && tokenBalance && (
+        <div className="mt-2 text-xs text-slate-500">
+          You currently have{" "}
+          <span className="font-medium text-slate-700">
+            {tokenBalance.balance.toFixed(4)} {selectedToken.name}
+          </span>{" "}
+          in your wallet
+        </div>
+      )}
     </div>
   );
 }
+
 
 export function AssetSelector({
   selectedToken,

@@ -18,7 +18,8 @@ export interface TokenDetails {
     mint :string,
     native :boolean,
     image:string,
-    price?: string
+    price?: string,
+    decimals: number
 }
 
 export const SUPPORTED_TOKENS = [
@@ -26,19 +27,22 @@ export const SUPPORTED_TOKENS = [
         name: "USDC",
         mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         native: false,
-        image :"/tokens/USDC.png"
+        image :"/tokens/USDC.png",
+        decimals : 6
     },
     {
         name: "USDT",
         mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
         native: false,
-        image :"/tokens/USDT.png"
+        image :"/tokens/USDT.png",
+        decimals : 6
     },
     {
         name: "SOL",
         mint: "So11111111111111111111111111111111111111112",
         native: true,
-        image :"/tokens/Sol.png"
+        image :"/tokens/Sol.png",
+        decimals : 9
     },
 ] as const;
 
