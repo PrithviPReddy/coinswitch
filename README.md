@@ -5,45 +5,30 @@ This project was developed as a personal portfolio project to showcase frontend,
 
 # 🚀 Features
 
-Token listing and selection
-
-Real-time quote fetching
-
-Token swap execution flow
-
-Authentication using NextAuth
-
-Modular UI components
-
-API routes using Next.js App Router
-
-TypeScript-based codebase
+- Token listing and selection
+- Real-time quote fetching
+- Token swap execution flow
+- Authentication using NextAuth
+- Modular UI components
+- API routes using Next.js App Router
+- TypeScript-based codebase
 
 # 🧱 Tech Stack
 
-## Frontend
+# Frontend
+- Next.js (App Router)
+- React
+- TypeScript
+- CSS / Tailwind (if applicable)
 
-Next.js (App Router)
+# Backend
+- Next.js API Routes
+- NextAuth for authentication
 
-React
-
-TypeScript
-
-CSS / Tailwind (if applicable)
-
-## Backend
-
-Next.js API Routes
-
-NextAuth for authentication
-
-## Tooling
-
-ESLint
-
-TypeScript
-
-Node.js
+# Tooling
+- ESLint
+- TypeScript
+- Node.js
 
 # 📂 Project Structure
 
@@ -61,15 +46,11 @@ config/
 
 # 🔁 Application Flow
 
-User authenticates using NextAuth
-
-User selects a source and destination token
-
-Application fetches a quote via API
-
-Swap request is processed via backend route
-
-Result is returned and displayed to the user
+- User authenticates using NextAuth
+- User selects a source and destination token
+- Application fetches a quote via API
+- Swap request is processed via backend route
+- Result is returned and displayed to the user
 
 # 🔐 Authentication
 
@@ -78,7 +59,7 @@ Protected routes can be extended to enforce authorization for sensitive operatio
 
 # ⚙️ Setup Instructions
 
-## 1. Clone the repository
+# 1. Clone the repository
 
 ```bash
 git clone https://github.com/PrithviPReddy/coinswitch.git
@@ -86,13 +67,13 @@ git clone https://github.com/PrithviPReddy/coinswitch.git
 cd coinswitch
 ```
 
-## 2. Install dependencies
+# 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-## 3. Configure environment variables
+# 3. Configure environment variables
 
 Create a .env file and add the required values:
 
@@ -102,7 +83,7 @@ NEXTAUTH_URL=http://localhost:3000
 
 ```
 
-## 4. Run the development server
+# 4. Run the development server
 
 ```bash
 npm run dev
@@ -113,38 +94,29 @@ Open http://localhost:3000
 
 # 🧪 Current Limitations
 
-Minimal input validation
-
-No rate limiting on APIs
-
-No caching for quotes
-
-Limited UI error handling
+- Minimal input validation
+- No rate limiting on APIs
+- No caching for quotes
+- Limited UI error handling
 
 These are intentional trade-offs for an MVP-level personal project.
 
 # 📈 Future Improvements
 
-Add schema validation using Zod
-
-Introduce caching for token and quote APIs
-
-Improve UI error and loading states
-
-Add unit and integration tests
-
-Improve documentation and architecture layering
+- Add schema validation using Zod
+- Introduce caching for token and quote APIs
+- Improve UI error and loading states
+- Add unit and integration tests
+- Improve documentation and architecture layering
 
 # 🎓 Academic Context
 
 This project was built by a 3rd-year Computer Science student as a personal resume project to demonstrate:
 
-Real-world framework usage
-
-Full-stack understanding
-
-Clean and maintainable code practices
+- Real-world framework usage
+- Full-stack understanding
+- Clean and maintainable code practices
 
 # 📜 License
 
-This project is intended for educational and portfolio purposes.
+This project is for educational and portfolio purposes.
