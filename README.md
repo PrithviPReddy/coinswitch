@@ -3,7 +3,7 @@
 CoinSwitch is a full-stack web application that demonstrates a simplified cryptocurrency token swap workflow, built using modern web technologies.
 This project was developed as a personal portfolio project to showcase frontend, backend, and API integration skills.
 
-# 🚀 Features
+#  Features
 
 - Token listing and selection
 - Real-time quote fetching
@@ -13,7 +13,7 @@ This project was developed as a personal portfolio project to showcase frontend,
 - API routes using Next.js App Router
 - TypeScript-based codebase
 
-# 🧱 Tech Stack
+#  Tech Stack
 
 # Frontend
 - Next.js (App Router)
@@ -30,7 +30,7 @@ This project was developed as a personal portfolio project to showcase frontend,
 - TypeScript
 - Node.js
 
-# 📂 Project Structure
+#  Project Structure
 
 ```plaintext
 app/
@@ -44,7 +44,7 @@ config/
 └── eslint / tsconfig
 ```
 
-# 🔁 Application Flow
+#  Application Flow
 
 - User authenticates using NextAuth
 - User selects a source and destination token
@@ -52,12 +52,12 @@ config/
 - Swap request is processed via backend route
 - Result is returned and displayed to the user
 
-# 🔐 Authentication
+#  Authentication
 
 Authentication is handled using NextAuth, providing a secure and extensible authentication layer.
 Protected routes can be extended to enforce authorization for sensitive operations such as swaps.
 
-# ⚙️ Setup Instructions
+#  Setup Instructions
 
 # 1. Clone the repository
 
@@ -93,7 +93,7 @@ Open http://localhost:3000
  in your browser.
 
 
-# 🎓 Academic Context
+#  Academic Context
 
 This project was built by a 3rd-year Computer Science student as a personal resume project to demonstrate:
 
@@ -101,6 +101,6 @@ This project was built by a 3rd-year Computer Science student as a personal resu
 - Full-stack understanding
 - Clean and maintainable code practices
 
-# 📜 License
+#  License
 
 This project is for educational purposes.
