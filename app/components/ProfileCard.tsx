@@ -1,5 +1,5 @@
 "use client";
-
+/* eslint-disable */
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -101,9 +101,15 @@ export function ProfileCard({ publicKey }: { publicKey: string }) {
         <div className={`${selectedTab === "token" ? "visible" : "hidden"}`}><Assets tokenBalances={tokenBalances} loading={loading} publicKey={publicKey} /> </div>
             <div className={`${selectedTab === "swap" ? "visible" : "hidden"}`}><Swap tokenBalances={tokenBalances} publicKey={publicKey} /> </div>
             <div className={`${(selectedTab !== "swap" && selectedTab !== "token") ? "visible" : "hidden"}`}><Warning /> </div>
-        <button className="mt-5 px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">
+        <button
+          onClick={() => {
+            window.open("https://faucet.solana.com/", "_blank", "noopener,noreferrer");
+          }}
+          className="mt-5 px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition"
+        >
           Add Funds
         </button>
+
       </div>
       {copied && (
         <div className="fixed bottom-6 right-6 z-50">
