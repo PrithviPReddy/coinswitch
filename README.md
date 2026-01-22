@@ -1,9 +1,9 @@
-CoinSwitch – Crypto Swap Web Application
+# CoinSwitch – Crypto Swap Web Application
 
 CoinSwitch is a full-stack web application that demonstrates a simplified cryptocurrency token swap workflow, built using modern web technologies.
 This project was developed as a personal portfolio project to showcase frontend, backend, and API integration skills.
 
-🚀 Features
+# 🚀 Features
 
 Token listing and selection
 
@@ -19,8 +19,9 @@ API routes using Next.js App Router
 
 TypeScript-based codebase
 
-🧱 Tech Stack
-Frontend
+# 🧱 Tech Stack
+
+## Frontend
 
 Next.js (App Router)
 
@@ -30,13 +31,13 @@ TypeScript
 
 CSS / Tailwind (if applicable)
 
-Backend
+## Backend
 
 Next.js API Routes
 
 NextAuth for authentication
 
-Tooling
+## Tooling
 
 ESLint
 
@@ -44,7 +45,7 @@ TypeScript
 
 Node.js
 
-📂 Project Structure
+# 📂 Project Structure
 
 ```plaintext
 app/
@@ -58,7 +59,7 @@ config/
 └── eslint / tsconfig
 ```
 
-🔁 Application Flow
+# 🔁 Application Flow
 
 User authenticates using NextAuth
 
@@ -70,13 +71,14 @@ Swap request is processed via backend route
 
 Result is returned and displayed to the user
 
-🔐 Authentication
+# 🔐 Authentication
 
 Authentication is handled using NextAuth, providing a secure and extensible authentication layer.
 Protected routes can be extended to enforce authorization for sensitive operations such as swaps.
 
-⚙️ Setup Instructions
-1. Clone the repository
+# ⚙️ Setup Instructions
+
+## 1. Clone the repository
 
 ```bash
 git clone https://github.com/PrithviPReddy/coinswitch.git
@@ -84,13 +86,13 @@ git clone https://github.com/PrithviPReddy/coinswitch.git
 cd coinswitch
 ```
 
-2. Install dependencies
+## 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-3. Configure environment variables
+## 3. Configure environment variables
 
 Create a .env file and add the required values:
 
@@ -100,7 +102,7 @@ NEXTAUTH_URL=http://localhost:3000
 
 ```
 
-4. Run the development server
+## 4. Run the development server
 
 ```bash
 npm run dev
@@ -109,7 +111,7 @@ npm run dev
 Open http://localhost:3000
  in your browser.
 
-🧪 Current Limitations
+# 🧪 Current Limitations
 
 Minimal input validation
 
@@ -121,7 +123,7 @@ Limited UI error handling
 
 These are intentional trade-offs for an MVP-level personal project.
 
-📈 Future Improvements
+# 📈 Future Improvements
 
 Add schema validation using Zod
 
@@ -133,7 +135,7 @@ Add unit and integration tests
 
 Improve documentation and architecture layering
 
-🎓 Academic Context
+# 🎓 Academic Context
 
 This project was built by a 3rd-year Computer Science student as a personal resume project to demonstrate:
 
@@ -143,6 +145,6 @@ Full-stack understanding
 
 Clean and maintainable code practices
 
-📜 License
+# 📜 License
 
-This project is for educational and portfolio purposes.
+This project is intended for educational and portfolio purposes.
