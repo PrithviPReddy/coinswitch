@@ -19,7 +19,7 @@ export async function GET(req: Request) {
           instructionVersion: 'V1',
         },
         headers: {
-          'x-api-key': process.env.JUP_API_KEY, // 🔒 server-only
+          'x-api-key': process.env.JUP_API_KEY, // server-only
         },
       }
     );
