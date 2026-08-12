@@ -1,0 +1,18 @@
+# Save as: <coinswitch repo root>/.dockerignore
+
+node_modules
+.next
+out
+build
+app/generated
+.git
+.gitignore
+.vscode
+.env
+.env.*
+!.env.example
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+npm-debug.log*

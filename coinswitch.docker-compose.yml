@@ -1,0 +1,54 @@
+# Save as: <coinswitch repo root>/docker-compose.yml
+#
+#   docker compose up --build       →  http://localhost:3000
+#
+# Put NEXTAUTH_SECRET and your Solana RPC endpoint in a .env file next to this
+# one. It is gitignored and is read by compose automatically.
+
+services:
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: coinswitch
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d coinswitch"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Applies migrations once, then exits.
+  migrate:
+    build:
+      context: .
+      target: builder
+    environment:
+      DATABASE_URL: postgresql://dev:devpassword@postgres:5432/coinswitch
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    environment:
+      # "postgres" is the compose service name. A localhost URL here resolves to
+      # the app container itself and the connection is refused.
+      DATABASE_URL: postgresql://dev:devpassword@postgres:5432/coinswitch
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-dev-secret-change-me}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
