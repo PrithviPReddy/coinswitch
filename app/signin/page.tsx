@@ -1,66 +1,91 @@
 "use client";
 
-import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
-import { GoogleSignInButton } from "../components/Button";
 
-export default function SignInPage() {
-  const [email, setEmail] = useState("");
+export default function SignIn() {
+  const [username, setUsername] = useState("demo@coinswitch.local");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submitDemo() {
+    setBusy(true);
+    setError(null);
+
+    const result = await signIn("demo", {
+      username,
+      password,
+      redirect: false,
+    });
+
+    setBusy(false);
+
+    if (result?.error) {
+      setError("Those credentials did not match the demo account.");
+      return;
+    }
+
+    window.location.href = "/dashboard";
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f6fbff] px-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-md">
-        {/* Heading */}
-        <h1 className="text-2xl font-semibold text-slate-900 text-center">
-          Sign in to DCEX
-        </h1>
-        <p className="mt-2 text-sm text-slate-600 text-center">
-          Access your account securely
-        </p>
+    <main className="mx-auto max-w-md px-6 py-20">
+      <h1 className="text-3xl text-ink">Sign in</h1>
+      <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+        A devnet wallet is created for your account on first sign-in and funded
+        from the project vault.
+      </p>
 
-        {/* Form */}
-        <div className="mt-8 space-y-4">
-          <input
-            type="email"
-            placeholder="Email address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      <div className="panel mt-8 p-6">
+        <label className="block text-sm text-ink-soft" htmlFor="username">
+          Username
+        </label>
+        <input
+          id="username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="figure mt-2 w-full rounded-[6px] border border-rule px-3 py-2 text-sm outline-none focus:border-emerald"
+        />
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
+        <label
+          className="mt-5 block text-sm text-ink-soft"
+          htmlFor="password"
+        >
+          Password
+        </label>
+        <input
+          id="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submitDemo()}
+          className="figure mt-2 w-full rounded-[6px] border border-rule px-3 py-2 text-sm outline-none focus:border-emerald"
+        />
 
-        {/* Buttons */}
-        <div className="mt-6 flex gap-3">
-          <button
-            className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 transition"
-          >
-            Login
-          </button>
+        {error && <p className="mt-4 text-sm text-flag">{error}</p>}
 
-          <GoogleSignInButton/>
-        </div>
-
-        {/* Create account */}
-        <p className="mt-6 text-center text-sm text-gray-600">
-          Create account?{" "}
-          <Link
-            href="/signup"
-            className="font-medium text-blue-600 hover:underline"
-          >
-            Sign up
-          </Link>
-        </p>
+        <button
+          onClick={submitDemo}
+          disabled={busy}
+          className="mt-6 w-full rounded-[6px] bg-ink py-2.5 text-sm text-paper hover:bg-emerald-deep disabled:opacity-50"
+        >
+          {busy ? "Signing in" : "Sign in"}
+        </button>
       </div>
-    </div>
+
+      <div className="mt-6 flex items-center gap-3">
+        <span className="h-px flex-1 bg-rule" />
+        <span className="text-xs text-ink-faint">or</span>
+        <span className="h-px flex-1 bg-rule" />
+      </div>
+
+      <button
+        onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
+        className="mt-6 w-full rounded-[6px] border border-rule bg-paper py-2.5 text-sm text-ink hover:bg-mist"
+      >
+        Continue with Google
+      </button>
+    </main>
   );
 }

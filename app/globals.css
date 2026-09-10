@@ -1,9 +1,65 @@
 @import "tailwindcss";
 
-@keyframes fade-in {
+/*
+  Palette and type carried over from the Review 1 deck so the product and the
+  slides read as one piece of work rather than two.
+*/
+@theme {
+  --color-ink: #0b1f33;
+  --color-ink-soft: #3d5169;
+  --color-ink-faint: #7c8ba1;
+  --color-paper: #ffffff;
+  --color-mist: #eef2fa;
+  --color-rule: #d5ddea;
+  --color-emerald: #0e9f6e;
+  --color-emerald-deep: #0a7d56;
+  --color-flag: #c0392b;
+
+  --font-serif: var(--font-source-serif), Georgia, serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-panel: 6px;
+}
+
+html {
+  background-color: #f7f9fc;
+}
+
+body {
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Amounts, addresses and signatures are tabular data and are set as such. */
+.figure {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel {
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-panel);
+}
+
+.rule-top {
+  border-top: 1px solid var(--color-rule);
+}
+
+/* One deliberate motion moment: the receipt arriving after a settled swap. */
+@keyframes receipt-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(-6px);
   }
   to {
     opacity: 1;
@@ -11,21 +67,23 @@
   }
 }
 
-@keyframes fade-out {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(8px);
+.receipt-in {
+  animation: receipt-in 260ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .receipt-in {
+    animation: none;
   }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.5s ease-out forwards;
+:focus-visible {
+  outline: 2px solid var(--color-emerald);
+  outline-offset: 2px;
 }
 
-.animate-fade-out {
-  animation: fade-out 0.5s ease-in forwards;
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
 }

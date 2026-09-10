@@ -1,34 +1,45 @@
-import { NextResponse } from 'next/server';
-import axios from 'axios';
+import { NextResponse } from "next/server";
+import axios from "axios";
+import { DEFAULT_SLIPPAGE_BPS } from "@/app/lib/constants";
 
+/**
+ * Quotes come from Jupiter on mainnet. That is the whole point of quoting
+ * here rather than on devnet: mainnet is where the liquidity that determines
+ * price impact actually sits.
+ */
 export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
+  const { searchParams } = new URL(req.url);
 
-    const response = await axios.get(
-      'https://api.jup.ag/swap/v1/quote',
-      {
-        params: {
-          inputMint: searchParams.get('inputMint'),
-          outputMint: searchParams.get('outputMint'),
-          amount: searchParams.get('amount'),
-          slippageBps: 50,
-          swapMode: 'ExactIn',
-          restrictIntermediateTokens: true,
-          maxAccounts: 64,
-          instructionVersion: 'V1',
-        },
-        headers: {
-          'x-api-key': process.env.JUP_API_KEY, // server-only
-        },
-      }
-    );
+  const amount = searchParams.get("amount");
+
+  if (!amount || Number(amount) <= 0) {
+    return NextResponse.json({ error: "Enter an amount" }, { status: 400 });
+  }
+
+  try {
+    const response = await axios.get("https://api.jup.ag/swap/v1/quote", {
+      params: {
+        inputMint: searchParams.get("inputMint"),
+        outputMint: searchParams.get("outputMint"),
+        amount,
+        slippageBps: searchParams.get("slippageBps") ?? DEFAULT_SLIPPAGE_BPS,
+        swapMode: "ExactIn",
+        restrictIntermediateTokens: true,
+        maxAccounts: 64,
+      },
+      headers: process.env.JUP_API_KEY
+        ? { "x-api-key": process.env.JUP_API_KEY }
+        : undefined,
+      timeout: 10_000,
+    });
 
     return NextResponse.json(response.data);
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to fetch Jupiter quote' },
-      { status: 500 }
-    );
+    const detail =
+      axios.isAxiosError(error) && error.response?.status === 429
+        ? "Jupiter is rate limiting this key. Wait a moment and retry."
+        : "Could not reach Jupiter for a quote.";
+
+    return NextResponse.json({ error: detail }, { status: 502 });
   }
 }

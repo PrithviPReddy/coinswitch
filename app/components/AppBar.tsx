@@ -6,61 +6,43 @@ import { useRouter } from "next/navigation";
 
 export default function AppBar() {
   const { data: session } = useSession();
-  const router = useRouter()
+  const router = useRouter();
 
   return (
-    <div className="border-b px-4 py-3 flex justify-between items-center">
-      {/* Logo */}
-      <button
-      onClick={() => {
-        if (session?.user) {
-          router.push("/dashboard");
-        } else {
-          router.push("/");
-        }
-      }}
-      className="text-xl font-bold tracking-wide cursor-pointer"
-    >
-      DCEX
-    </button>
+    <header className="border-b border-rule bg-paper">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <button
+          onClick={() => router.push(session?.user ? "/dashboard" : "/")}
+          className="flex items-baseline gap-2.5"
+        >
+          <span className="font-serif text-xl text-ink">CoinSwitch</span>
+          <span className="figure text-[11px] text-ink-faint">devnet</span>
+        </button>
 
-      {/* Auth Actions */}
-      <div className="flex items-center gap-3">
-        {!session?.user ? (
-          <>
+        {session?.user ? (
+          <div className="flex items-center gap-5">
             <Link
-              href="/signin"
-              className="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 hover:bg-gray-100 transition"
+              href="/dashboard"
+              className="text-sm text-ink-soft hover:text-ink"
             >
-              Login
+              Terminal
             </Link>
-
-            <Link
-              href="/signup"
-              className="px-4 py-2 text-sm font-medium rounded-md bg-black text-white hover:bg-gray-800 transition"
-            >
-              Sign up
-            </Link>
-          </>
-        ) : (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="px-5 py-2 text-sm font-medium rounded-md bg-blue-600 text-white shadow-sm hover:bg-blue-700 transition"
-            >
-              Dashboard
-            </button>
-
             <button
               onClick={() => signOut({ callbackUrl: "/" })}
-              className="px-4 py-2 text-sm font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 transition"
+              className="text-sm text-ink-soft hover:text-ink"
             >
-              Logout
+              Sign out
             </button>
           </div>
-
+        ) : (
+          <Link
+            href="/signin"
+            className="rounded-[6px] bg-ink px-4 py-2 text-sm text-paper hover:bg-emerald-deep"
+          >
+            Sign in
+          </Link>
         )}
       </div>
-    </div>
+    </header>
   );
 }

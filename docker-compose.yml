@@ -1,12 +1,10 @@
-# Save as: <coinswitch repo root>/docker-compose.yml
+# docker compose up --build  ->  http://localhost:3000
 #
-#   docker compose up --build       →  http://localhost:3000
-#
-# Put NEXTAUTH_SECRET and your Solana RPC endpoint in a .env file next to this
-# one. It is gitignored and is read by compose automatically.
+# Everything below reads from a .env file sitting next to this one. Copy
+# .env.example to .env and fill it in first; `npm run setup:devnet` prints
+# the three Solana values.
 
 services:
-
   postgres:
     image: postgres:16
     environment:
@@ -41,11 +39,27 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # "postgres" is the compose service name. A localhost URL here resolves to
-      # the app container itself and the connection is refused.
+      # "postgres" is the compose service name. localhost here would resolve
+      # to the app container itself and the connection would be refused.
       DATABASE_URL: postgresql://dev:devpassword@postgres:5432/coinswitch
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-dev-secret-change-me}
+
+      JUP_API_KEY: ${JUP_API_KEY:-}
+      MAINNET_RPC_URL: ${MAINNET_RPC_URL:-https://api.mainnet-beta.solana.com}
+      DEVNET_RPC_URL: ${DEVNET_RPC_URL:-https://api.devnet.solana.com}
+
+      DEVNET_USDC_MINT: ${DEVNET_USDC_MINT}
+      DEVNET_USDT_MINT: ${DEVNET_USDT_MINT}
+      VAULT_SECRET_KEY: ${VAULT_SECRET_KEY}
+
+      DEMO_USERNAME: ${DEMO_USERNAME:-demo@coinswitch.local}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-review2}
+
+      MAX_WALLETS_PER_USER: ${MAX_WALLETS_PER_USER:-5}
+
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

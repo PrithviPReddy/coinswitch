@@ -1,93 +1,98 @@
 "use client";
 
 import Link from "next/link";
-import { signIn, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 
 export default function Hero() {
   const { data: session } = useSession();
 
   return (
-    <main className="min-h-screen bg-[#f6fbff]">
-      {/* Hero Section */}
-      <section className="max-w-7xl mx-auto px-6 pt-24 text-center">
-        <h1 className="text-4xl md:text-6xl font-bold text-gray-900 leading-tight">
-          The crypto of tomorrow,{" "}
-          <span className="text-blue-600">today</span>
-        </h1>
+    <main className="mx-auto max-w-6xl px-6 py-20">
+      <div className="grid gap-16 lg:grid-cols-[1.1fr_1fr]">
+        <div>
+          <h1 className="max-w-xl text-[42px] leading-[1.12] text-ink md:text-5xl">
+            Swaps priced where the liquidity is, settled where you can check
+            them.
+          </h1>
 
-        <p className="mt-6 text-lg text-gray-600 max-w-2xl mx-auto">
-          Trade, store, and manage digital assets on DCEX with a seamless,
-          secure, and modern exchange experience.
-        </p>
+          <p className="mt-7 max-w-xl text-[17px] leading-relaxed text-ink-soft">
+            CoinSwitch asks Jupiter for a route on Solana mainnet, because that
+            is the only network where a quote reflects real depth. The trade
+            itself settles on devnet against tokens this project mints, so every
+            swap leaves a signature you can open in an explorer and read line by
+            line.
+          </p>
 
-        <div className="mt-10 flex justify-center gap-4">
-          {/* Auth-aware buttons */}
-          {!session?.user ? (
-            <>
-              <button
-                onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-                className="flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition"
-              >
-                Sign up with Google
-              </button>
-
-              <Link
-                href="/signin"
-                className="px-6 py-3 rounded-lg border border-gray-300 font-medium text-gray-700 hover:bg-gray-100 transition"
-              >
-                Login
-              </Link>
-            </>
-          ) : (
-            <div></div>
-          )}
-        </div>
-      </section>
-
-      {/* Feature Cards */}
-      <section className="max-w-6xl mx-auto px-6 mt-24 grid gap-6 md:grid-cols-3">
-        <FeatureCard
-          title="DCEX Wallet"
-          description="A simple, secure wallet built directly into the exchange."
-        />
-        <FeatureCard
-          title="DCEX Pro"
-          description="High-performance trading tools for advanced users."
-        />
-        <FeatureCard
-          title="DCEX API"
-          description="Build and automate trading strategies with powerful APIs."
-        />
-      </section>
-
-      {/* Mock Preview */}
-      <section className="max-w-6xl mx-auto px-6 mt-24">
-        <div className="bg-white rounded-2xl shadow-lg p-6">
-          <div className="h-64 md:h-96 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-gray-400 text-sm">
-            Trading Dashboard Preview
+          <div className="mt-9 flex items-center gap-4">
+            <Link
+              href={session?.user ? "/dashboard" : "/signin"}
+              className="rounded-[6px] bg-emerald px-5 py-2.5 text-sm font-medium text-paper hover:bg-emerald-deep"
+            >
+              {session?.user ? "Open the terminal" : "Sign in to swap"}
+            </Link>
+            <a
+              href="https://solscan.io/?cluster=devnet"
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink"
+            >
+              Devnet explorer
+            </a>
           </div>
         </div>
-      </section>
 
-      {/* Footer */}
-      <footer className="mt-32 py-10 border-t text-center text-sm text-gray-500">
-        © {new Date().getFullYear()} DCEX. All rights reserved.
-      </footer>
+        <div className="panel p-7">
+          <p className="text-sm text-ink-faint">How one swap travels</p>
+
+          <ol className="mt-6 space-y-0">
+            <Step
+              network="mainnet"
+              title="Route and price"
+              body="Jupiter returns the best path across Solana DEXs, its expected output, and the price impact that path carries."
+            />
+            <Step
+              network="local"
+              title="Record the quote"
+              body="The quoted figure is written to the swap log before anything is signed, so it cannot be revised after the fact."
+            />
+            <Step
+              network="devnet"
+              title="Settle atomically"
+              body="One transaction moves the input to the vault and the output back. Both legs land or neither does."
+            />
+            <Step
+              network="devnet"
+              title="Read it back"
+              body="The delivered amount is read from account state after confirmation, then shown beside the quote."
+              last
+            />
+          </ol>
+        </div>
+      </div>
     </main>
   );
 }
 
-function FeatureCard({
+function Step({
+  network,
   title,
-  description,
+  body,
+  last = false,
 }: {
+  network: string;
   title: string;
-  description: string;
+  body: string;
+  last?: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition">
-      <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-      <p className="mt-2 text-gray-600 text-sm">{description}</p>
-    </div>
+    <li className={last ? "py-4" : "border-b border-rule py-4"}>
+      <div className="flex items-baseline justify-between gap-4">
+        <h3 className="text-[15px] text-ink">{title}</h3>
+        <span className="figure shrink-0 text-[11px] text-emerald">
+          {network}
+        </span>
+      </div>
+      <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{body}</p>
+    </li>
   );
 }
