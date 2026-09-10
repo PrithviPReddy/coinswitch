@@ -158,6 +158,46 @@ export async function readBalance(
 }
 
 /**
+ * Headroom kept on top of whatever a transaction pays out, covering the
+ * signature fee and any associated token account the vault creates for a
+ * recipient on the way through.
+ */
+const VAULT_HEADROOM_LAMPORTS = BigInt(10_000_000);
+
+/**
+ * Fails before signing when the vault cannot cover what it is about to owe.
+ *
+ * Worth understanding why this happens at all: the project mints USDC and
+ * USDT itself, so those never run out, but SOL can only come from the devnet
+ * faucet. The vault pays SOL out on every swap that ends in SOL, on every
+ * top-up, and as fee payer on everything, while receiving only self-minted
+ * tokens in return. SOL is the one genuinely scarce asset here and it drains
+ * in one direction.
+ *
+ * Without this check the shortfall surfaces as a raw simulation dump from the
+ * System program, which tells a user nothing they can act on.
+ */
+async function assertVaultCanPay(
+  vault: PublicKey,
+  lamportsOut: bigint,
+  action: string,
+): Promise<void> {
+  const balance = BigInt(await devnetConnection.getBalance(vault));
+  const needed = lamportsOut + VAULT_HEADROOM_LAMPORTS;
+
+  if (balance >= needed) return;
+
+  const have = fromBaseUnits(balance, 9);
+  const want = fromBaseUnits(needed, 9);
+
+  throw new Error(
+    `The vault is out of devnet SOL: it holds ${have} and ${action} needs ` +
+      `about ${want}. Airdrop more to ${vault.toBase58()} — ` +
+      "faucet.solana.com gives a larger allowance than the public RPC.",
+  );
+}
+
+/**
  * Builds the settlement leg of a swap: the user's input token moves to the
  * vault and the quoted output moves back, both inside one transaction. Either
  * both transfers land or neither does - there is no state where a user has
@@ -178,6 +218,14 @@ export async function settleSwap({
 }): Promise<string> {
   const vault = loadVaultKeypair();
   const user = userKeypair.publicKey;
+
+  // Only a native payout draws on the vault's SOL. A token payout is minted
+  // stock and cannot run short, though the fee still has to be affordable.
+  await assertVaultCanPay(
+    vault.publicKey,
+    outputToken.native ? outBaseUnits : BigInt(0),
+    "this swap",
+  );
 
   const instructions: TransactionInstruction[] = [];
 
@@ -260,12 +308,15 @@ export async function fundWallet(
   tokens: TokenDetails[],
 ): Promise<string[]> {
   const vault = loadVaultKeypair();
+  const topUp = BigInt(Math.floor(0.2 * LAMPORTS_PER_SOL));
+
+  await assertVaultCanPay(vault.publicKey, topUp, "a top-up");
 
   const instructions: TransactionInstruction[] = [
     SystemProgram.transfer({
       fromPubkey: vault.publicKey,
       toPubkey: owner,
-      lamports: Math.floor(0.2 * LAMPORTS_PER_SOL),
+      lamports: topUp,
     }),
   ];
 
@@ -330,6 +381,10 @@ export async function sendTokens({
 }): Promise<string> {
   const vault = loadVaultKeypair();
   const sender = senderKeypair.publicKey;
+
+  // The vault funds no part of the amount here, only the fee and any token
+  // account the recipient still needs, which is what the headroom covers.
+  await assertVaultCanPay(vault.publicKey, BigInt(0), "sending");
 
   if (token.native) {
     return sendAndConfirm(
