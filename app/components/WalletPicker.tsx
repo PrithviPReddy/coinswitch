@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Wallet } from "../hooks/useWallets";
 
 const explorerAddress = (address: string) =>
@@ -36,6 +36,31 @@ export default function WalletPicker({
   // the wallet id, so there is no effect here syncing a draft to a prop.
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(selected.label);
+  const [copied, setCopied] = useState(false);
+
+  // The confirmation resets on a timer, and this component unmounts whenever
+  // the wallet changes, so the pending timer has to be cancelled with it.
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, []);
+
+  async function copyAddress() {
+    try {
+      await navigator.clipboard.writeText(selected.publicKey);
+      setCopied(true);
+
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // writeText rejects when the page is not a secure context or the user
+      // has denied clipboard access. Leaving the label alone is the signal:
+      // the address is on screen and still selectable by hand.
+    }
+  }
 
   const atLimit = wallets.length >= limit;
 
@@ -107,6 +132,12 @@ export default function WalletPicker({
           className="text-xs text-ink-faint hover:text-emerald disabled:opacity-40"
         >
           {creating ? "Creating" : "New wallet"}
+        </button>
+        <button
+          onClick={copyAddress}
+          className={`text-xs ${copied ? "text-emerald" : "text-ink-faint hover:text-emerald"}`}
+        >
+          {copied ? "Copied" : "Copy address"}
         </button>
       </div>
 
