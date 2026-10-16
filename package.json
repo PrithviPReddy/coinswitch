@@ -17,7 +17,8 @@
     "sampler:logs": "docker compose logs -f --tail 50 sampler",
     "export:samples": "node scripts/export-samples.mjs",
     "db:migrate": "prisma migrate deploy",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "build:fill-model": "vite-node scripts/build-fill-model.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
@@ -44,6 +45,7 @@
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vite-node": "3.2.4",
     "vitest": "^3.2.4"
   }
 }

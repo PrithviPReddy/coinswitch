@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { Keypair } from "@solana/web3.js";
-import { decideFill } from "./fill";
+import { decideFill, type FillAudit, type FillDecision } from "./fill";
 import { parseQuoteResponse, type Quote } from "./jupiter";
 import { SettlementNotAppliedError, SettlementUncertainError } from "./devnet";
 import { SLIPPAGE_BOUND_REASON, executeSwap, parseSwapRequest, type SwapDeps } from "./swap";
@@ -32,6 +32,22 @@ const BODY = {
   slippageBps: 50,
 };
 
+const NO_AUDIT: FillAudit = {
+  modelVersion: null,
+  bucketLevel: "none",
+  bucketKey: null,
+  bucketN: null,
+  horizonSeconds: null,
+  latencyEstimateMs: null,
+  volatility: null,
+  fallbackReason: "test",
+};
+
+const withAudit = (decision: FillDecision, audit: Partial<FillAudit> = {}) => ({
+  decision,
+  audit: { ...NO_AUDIT, ...audit },
+});
+
 /** Records every write, and lets each test script settlement. */
 function harness(overrides: Partial<SwapDeps> = {}) {
   const rows = new Map<string, Record<string, unknown>>();
@@ -44,8 +60,8 @@ function harness(overrides: Partial<SwapDeps> = {}) {
       quoteCalls.push(args);
       return SERVER_QUOTE;
     },
-    decideFill: ({ quote, slippageBps }) =>
-      decideFill({ quotedOut: quote.outAmount, slippageBps, mode: "exact" }),
+    decideFill: async ({ quote, slippageBps }) =>
+      withAudit(decideFill({ quotedOut: quote.outAmount, slippageBps, mode: "exact" })),
     readBalance: async () => balance,
     settleSwap: async (args) => {
       settleCalls.push({ outBaseUnits: args.outBaseUnits, inBaseUnits: args.inBaseUnits });
@@ -144,8 +160,11 @@ describe("executeSwap", () => {
 
   it("records a fill below the slippage cap as Failed and never settles it", async () => {
     const { deps, settleCalls, rows } = harness({
-      decideFill: ({ quote, slippageBps }) =>
-        decideFill({ quotedOut: quote.outAmount, slippageBps, mode: "simulated", shortfallBps: 80 }),
+      decideFill: async ({ quote, slippageBps }) =>
+        withAudit(
+          decideFill({ quotedOut: quote.outAmount, slippageBps, mode: "simulated", shortfallBps: 80, modelVersion: "test-v1" }),
+          { modelVersion: "test-v1", bucketLevel: "pair", bucketKey: "SOL/USDC", horizonSeconds: 5 },
+        ),
     });
 
     const result = await run(deps);
@@ -222,6 +241,20 @@ describe("executeSwap", () => {
     const result = await run(deps);
     expect(result.status).toBe(200);
     expect(rows.get("s1")).toMatchObject({ status: "Settled", settledOut: null, signature: "SIG111" });
+  });
+
+  it("writes and signs nothing when the fill cannot be decided", async () => {
+    const { deps, rows, settleCalls } = harness({
+      decideFill: async () => {
+        throw new RangeError("boom");
+      },
+    });
+
+    const result = await run(deps);
+    expect(result.status).toBe(502);
+    expect(result.body.message).toMatch(/Could not decide the fill/);
+    expect(rows.size).toBe(0);
+    expect(settleCalls).toHaveLength(0);
   });
 
   it("writes nothing when there is no quote to settle against", async () => {

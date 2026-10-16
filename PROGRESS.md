@@ -7,8 +7,8 @@ Sprint plan: P0 sampler → P1 integrity fixes → P2 simulated fill → P3 pred
 
 | Table | Rows | First row | Counted at |
 |---|---|---|---|
-| QuoteSample | 5,269 | 2026-10-16 04:04 UTC | 2026-10-16 08:48 UTC |
-| QuoteDrift | 1,599 | 2026-10-16 04:23 UTC | 2026-10-16 08:48 UTC |
+| QuoteSample | 8,274 | 2026-10-16 04:04 UTC | 2026-10-16 11:03 UTC |
+| QuoteDrift | 2,185 | 2026-10-16 04:23 UTC | 2026-10-16 11:03 UTC |
 
 v2 (thin pairs, 9 rungs, `notionalSource = 'price_v3'`) began at
 2026-10-16 08:29:15 UTC.
@@ -161,6 +161,78 @@ unit tests.
   prints the RPC URL, which carries the Alchemy key.
 - Rate-limit contention is visible: the sampler logged 16 real 429s during
   this phase's live testing. All recovered; 1 request in 3,313 failed.
+
+### P2 — simulated fill (2026-10-16)
+- `FILL_MODE=exact|simulated`, default simulated. The payout is the
+  server's quote moved by one **two-sided** draw from recorded mainnet quote
+  drift. MEV is not modelled. Impact is not a shortfall, because it is
+  already inside the quote.
+- **Artifact:** `npm run build:fill-model` writes `models/fill-model.json`
+  (empirical quantiles, version `fill-q-<time>-<hash>`), built in TypeScript
+  by `scripts/build-fill-model.ts`, run with `vite-node`. All logic lives in
+  `app/lib/fillModel.ts`, which the app also uses at swap time, so features
+  can't drift between build and serve.
+  - Buckets need n ≥ 20 and fall back pair×size×vol → pair×size → pair →
+    global, where global is **per depth class** so thin swaps never draw
+    from deep data.
+  - A reverse-direction swap uses the sampled market with the sign flipped,
+    and the row says "(reversed)".
+  - Size buckets: <$1k, <$20k, ≥$20k.
+  - Volatility: the standard deviation of log returns of the rung-1 price,
+    each scaled by 1/√interval, over a trailing 30 minutes, in bps/√min.
+    Returns across gaps over 10 min are skipped, and at least 8 returns are
+    needed. Per-pair tertiles need 60 origins; the thin pairs don't have
+    that yet, so they skip the vol split.
+  - A drift row is placed by `actualElapsedMs` within max(2 s, 25%) of a
+    horizon, or left out: 264 of 2,105 were.
+- **Horizon:** nearest to the median measured quote→confirmation time of
+  recent swaps, never less than the time already elapsed. In practice +5 s.
+  The fill has to be decided before signing, so this is an estimate; the
+  actual quote→confirm time is recorded on the row (`quotedAt`,
+  `confirmedAt`).
+- **Swap audit columns:** `fillMode`, `simulatedShortfallBps`,
+  `fillModelVersion`, `fillBucketLevel`, `fillBucketKey`,
+  `fillHorizonSeconds`, `fillLatencyEstimateMs`, `fillVolatility`,
+  `signedAt`, `confirmedAt`.
+- The slippage bound is live. A no-artifact or invalid-artifact start logs
+  `SIMULATED FILLS ARE OFF` and settles exactly. A fill decision that throws
+  writes and signs nothing.
+- **UI:** a "simulated fill" badge and a plain-words line on the receipt
+  ("x bps below/above the quote, drawn from recorded +5s mainnet quote drift
+  (bucket)"), and a "sim" marker per log row. README section added.
+- **Pending reconciliation:** each `/api/swaps` load checks up to 25 Pending
+  rows that hold a signature. Confirmed → Settled, with the delivered amount
+  read from the transaction's balance changes. On-chain error → Failed.
+  Unknown 5 min after signing → Failed (blockhash expired).
+- **Live on devnet:**
+  - BONK→USDC $1k drew 1.19 bps; delivered = quote × (1 − 1.19 bps), read
+    back.
+  - USDC→BONK drew from `BONK/USDC|small (reversed)`.
+  - Eight $50 swaps at a 1 bps cap: 2 refused "slippage bound exceeded"
+    (unsigned), 4 settled **above** the quote, 1 at it, and 1 got
+    Jupiter-429'd (shared key).
+  - The old timed-out row `3TYERG…` reconciled to Settled 0.009370036 SOL.
+  - A missing artifact fell back to exact, loudly.
+- Bugs found and fixed while verifying:
+  - `crypto.randomInt` range overflow, which crashed the first draws before
+    any row or signature.
+  - The latency estimate undercounted (summed since-quote and
+    sign→confirm: ~2.8 s predicted, 3.4–5.8 s real). It now uses the
+    measured quote→confirm median.
+
+### Sampler fix during P2 (2026-10-16 10:42 and 10:50 UTC)
+- **+5 s drift had been almost missing for the deep pairs** (12% of v2 drift
+  sets, against 63% for thin). Two scheduling causes:
+  - a +60 s re-quote lands exactly on another pair's ladder start (the
+    stagger is 20 s, and 60 s is three slots), and the window's tenth slot
+    goes to it;
+  - each price refresh spent a keyed slot inside a ladder window.
+- Fixes: a third limiter priority with one reserved slot. Ladder rungs and
+  +5/+15 s re-quotes may use it; +30/+60 s re-quotes and price lookups may
+  not. Price lookups also moved to the keyless budget.
+- **Measured effect**, in a clean interval with no app traffic (10:54–11:03 UTC, 7 drift sets per depth class): deep +5 s coverage went from 12% to 86% and thin from 63% to 100%. Ladder span was p50 0.27 s, p90 0.46 s, with zero 429s. **Data note for P3:**
+  v2 deep-pair +5 s drift before 10:42 UTC is sparse and was lost
+  systematically, not at random. +15/30/60 s coverage was 88–99%.
 
 ## In progress
 

@@ -5,18 +5,28 @@
  */
 export default function TxReceipt({
   title,
+  badge,
   rows,
   signature,
   explorerUrl,
 }: {
   title: string;
+  /** A visible label beside the title, e.g. "simulated fill". */
+  badge?: string;
   rows: { term: string; value: string; accent?: boolean }[];
   signature: string;
   explorerUrl: string;
 }) {
   return (
     <div className="receipt-in mt-8 rounded-[6px] bg-ink p-7 text-paper">
-      <h2 className="font-serif text-lg text-paper">{title}</h2>
+      <div className="flex items-center gap-3">
+        <h2 className="font-serif text-lg text-paper">{title}</h2>
+        {badge && (
+          <span className="rounded-[4px] border border-emerald/60 px-2 py-0.5 text-[11px] uppercase tracking-wide text-emerald">
+            {badge}
+          </span>
+        )}
+      </div>
 
       <dl className="mt-6 space-y-3 text-sm">
         {rows.map((row) => (

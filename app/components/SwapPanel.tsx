@@ -21,7 +21,22 @@ type Receipt = {
   inputSymbol: string;
   outputSymbol: string;
   routeLabels: string[];
+  fillMode?: "exact" | "simulated" | null;
+  simulatedShortfallBps?: number | null;
+  fillBucketLevel?: string | null;
+  fillBucketKey?: string | null;
+  fillHorizonSeconds?: number | null;
 };
+
+/** How a simulated payout was decided, in words. Never called slippage. */
+function fillNote(r: Receipt): string {
+  const bps = r.simulatedShortfallBps ?? 0;
+  const direction = bps > 0 ? "below" : bps < 0 ? "above" : "at";
+  return (
+    `${Math.abs(bps).toFixed(2)} bps ${direction} the quote, drawn from recorded ` +
+    `+${r.fillHorizonSeconds}s mainnet quote drift (${r.fillBucketKey ?? r.fillBucketLevel})`
+  );
+}
 
 type LedgerRow = Receipt & {
   status: "Pending" | "Settled" | "Failed";
@@ -208,6 +223,7 @@ export default function SwapPanel({
       {receipt && (
         <TxReceipt
           title="Settled"
+          badge={receipt.fillMode === "simulated" ? "simulated fill" : undefined}
           signature={receipt.signature}
           explorerUrl={receipt.explorerUrl}
           rows={[
@@ -227,6 +243,9 @@ export default function SwapPanel({
                   : `${receipt.settledOut} ${receipt.outputSymbol}`,
               accent: true,
             },
+            ...(receipt.fillMode === "simulated"
+              ? [{ term: "Simulated fill", value: fillNote(receipt) }]
+              : []),
             ...(receipt.settledOut === null
               ? []
               : [
@@ -363,6 +382,14 @@ function Ledger({ rows }: { rows: LedgerRow[] }) {
                 </td>
                 <td className="figure px-5 py-3.5 text-right text-ink">
                   {row.settledOut ?? "—"}
+                  {row.fillMode === "simulated" && (
+                    <span
+                      title={fillNote(row)}
+                      className="ml-2 rounded-[4px] border border-rule px-1.5 py-0.5 text-[10px] text-ink-faint"
+                    >
+                      sim
+                    </span>
+                  )}
                 </td>
                 <td className="px-5 py-3.5">
                   {row.explorerUrl ? (

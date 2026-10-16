@@ -21,8 +21,15 @@ describe("applyShortfall", () => {
     expect(applyShortfall(QUOTED, 12.5)).toBe(BigInt(104_891_922));
   });
 
-  it("refuses a negative shortfall, which would pay out more than quoted", () => {
-    expect(() => applyShortfall(QUOTED, -1)).toThrow();
+  it("pays above the quote for a negative shortfall, since drift runs both ways", () => {
+    // 105023201 x 1.0001, rounded up.
+    expect(applyShortfall(QUOTED, -1)).toBe(BigInt(105_033_704));
+  });
+
+  it("refuses a shortfall of 100% or more in either direction", () => {
+    expect(() => applyShortfall(QUOTED, 10_000)).toThrow();
+    expect(() => applyShortfall(QUOTED, -10_000)).toThrow();
+    expect(() => applyShortfall(QUOTED, Number.NaN)).toThrow();
   });
 });
 

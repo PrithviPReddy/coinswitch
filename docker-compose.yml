@@ -55,6 +55,9 @@ services:
       DEVNET_BONK_MINT: ${DEVNET_BONK_MINT}
       DEVNET_WIF_MINT: ${DEVNET_WIF_MINT}
       FUND_TOKEN_USD: ${FUND_TOKEN_USD:-250000}
+      # simulated: payouts drawn from recorded mainnet quote drift (labelled
+      # "simulated fill" everywhere). exact: pay the quote.
+      FILL_MODE: ${FILL_MODE:-simulated}
       VAULT_SECRET_KEY: ${VAULT_SECRET_KEY}
 
       DEMO_USERNAME: ${DEMO_USERNAME:-demo@coinswitch.local}

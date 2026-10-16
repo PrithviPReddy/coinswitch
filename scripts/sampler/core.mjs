@@ -225,35 +225,57 @@ export function parseQuote(data) {
  * pauseUntil holds every caller back, which is how one 429 slows the whole
  * sampler rather than only the request that hit it.
  *
- * Two priorities, FIFO within each. Ladder rungs go "high" so a ladder stays
- * as close to one market instant as the cap allows; drift re-quotes go "low"
- * and absorb the waiting instead. That costs drift nothing in honesty, since
- * each drift row records when it was actually re-quoted.
+ * Three priorities, FIFO within each, served in this order:
+ *   high    ladder rungs, so a ladder stays one market instant
+ *   urgent  drift re-quotes with a tight timing tolerance (+5 s, +15 s)
+ *   low     loose drift (+30 s, +60 s) and price refreshes
+ *
+ * Low may not take the last `reserve` slots in a window. Without that, a
+ * +60 s re-quote that happens to coincide with another pair's ladder start
+ * takes the window's tenth slot, and the +5 s re-quote due right after finds
+ * none, misses its 2 s tolerance and is dropped. That happened systematically
+ * to the deep pairs before 2026-10-16 10:45 UTC. Low requests have 7.5-15 s
+ * of tolerance, so waiting for a slot costs them nothing.
  *
  * Jupiter counts in fixed ten-second windows. A sliding cap of N guarantees
  * no fixed window ever sees more than N, so the two never disagree.
  */
+export const PRIORITIES = ["high", "urgent", "low"];
+
 export function createRateLimiter({
   maxRequests,
   windowMs,
+  reserve = 0,
   now = Date.now,
   sleep = defaultSleep,
 }) {
   if (!(maxRequests >= 1)) throw new Error("maxRequests must be at least 1");
+  if (!(reserve >= 0 && reserve < maxRequests)) throw new Error("reserve must leave room for low priority");
 
   const grants = [];
-  const waiting = { high: [], low: [] };
+  const waiting = { high: [], urgent: [], low: [] };
   let pausedUntil = 0;
   let pumping = false;
+  let wake = null;
+
+  /** Sleeps, but an arriving higher-priority request cuts the sleep short. */
+  function interruptibleSleep(ms) {
+    return Promise.race([sleep(ms), new Promise((resolve) => (wake = resolve))]);
+  }
 
   async function pump() {
-    if (pumping) return;
+    if (pumping) {
+      wake?.();
+      return;
+    }
     pumping = true;
 
     try {
-      while (waiting.high.length || waiting.low.length) {
-        const t = now();
+      for (;;) {
+        const next = PRIORITIES.find((p) => waiting[p].length);
+        if (!next) break;
 
+        const t = now();
         while (grants.length && grants[0] <= t - windowMs) grants.shift();
 
         if (t < pausedUntil) {
@@ -261,23 +283,27 @@ export function createRateLimiter({
           continue;
         }
 
-        if (grants.length >= maxRequests) {
-          await sleep(grants[0] + windowMs - t);
+        const free = maxRequests - grants.length;
+        const needed = next === "low" ? reserve + 1 : 1;
+
+        if (free < needed) {
+          await interruptibleSleep(grants[0] + windowMs - t);
           continue;
         }
 
         grants.push(t);
-        (waiting.high.shift() ?? waiting.low.shift())();
+        waiting[next].shift()();
       }
     } finally {
       pumping = false;
+      wake = null;
     }
   }
 
   return {
     acquire(priority = "high") {
       return new Promise((resolve) => {
-        waiting[priority === "low" ? "low" : "high"].push(resolve);
+        waiting[PRIORITIES.includes(priority) ? priority : "high"].push(resolve);
         pump();
       });
     },

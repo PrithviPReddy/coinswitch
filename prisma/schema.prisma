@@ -81,6 +81,25 @@ model Swap {
   contextSlot          Int?
   otherAmountThreshold String?
 
+  // How the payout was decided. "exact" pays the quote. "simulated" pays the
+  // quote moved by a draw from recorded mainnet quote drift (app/lib/fillModel.ts);
+  // it is a modelled fill on devnet, not observed slippage. The rest records
+  // exactly which distribution the draw came from, so any result can be
+  // audited: artifact version, fallback level and key, the drift horizon,
+  // the latency estimate that chose it, and the volatility at the time.
+  fillMode              String?
+  simulatedShortfallBps Decimal?  @db.Decimal(16, 6)
+  fillModelVersion      String?
+  fillBucketLevel       String?
+  fillBucketKey         String?
+  fillHorizonSeconds    Int?
+  fillLatencyEstimateMs Int?
+  fillVolatility        Decimal?  @db.Decimal(16, 6)
+  // When the transaction was signed and when it confirmed, for measuring
+  // real quote-to-settlement latency.
+  signedAt              DateTime?
+  confirmedAt           DateTime?
+
   inAmount   Decimal  @db.Decimal(30, 12)
   quotedOut  Decimal  @db.Decimal(30, 12)
   settledOut Decimal? @db.Decimal(30, 12)

@@ -62,6 +62,8 @@ COPY --from=builder --chown=node:node /app/prisma           ./prisma
 COPY --from=builder --chown=node:node /app/prisma.config.ts ./prisma.config.ts
 # The quote sampler runs from this same image with a different command.
 COPY --from=builder --chown=node:node /app/scripts          ./scripts
+# The fill model artifact simulated fills draw from (FILL_MODE=simulated).
+COPY --from=builder --chown=node:node /app/models           ./models
 
 USER node
 EXPOSE 3000

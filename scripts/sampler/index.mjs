@@ -33,6 +33,7 @@ import {
   buildLadderRows,
   createRateLimiter,
   decimalsMismatches,
+  driftToleranceMs,
   getJson,
   effectivePriceDecimal,
   isDriftLadder,
@@ -123,8 +124,13 @@ function log(message, extra) {
 
 const db = new PrismaClient();
 
+const windowCap = Math.max(1, Math.floor((config.maxRpm * WINDOW_MS) / 60_000));
+
 const limiter = createRateLimiter({
-  maxRequests: Math.max(1, Math.floor((config.maxRpm * WINDOW_MS) / 60_000)),
+  maxRequests: windowCap,
+  // One slot per window is kept back from low-priority requests for the
+  // tight-tolerance drift re-quotes. See createRateLimiter.
+  reserve: windowCap > 1 ? 1 : 0,
   windowMs: WINDOW_MS,
 });
 
@@ -146,14 +152,22 @@ const sleep = (ms) =>
     later(ms, resolve);
   });
 
-async function request(url, what, priority = "high") {
+/**
+ * Price lookups go keyless, on their own small limiter. Keyless traffic is
+ * metered separately from the key (5 per 10 s, by IP), so a price refresh no
+ * longer spends one of the key's 10 slots. With a nine-rung ladder in the
+ * same window, that one slot was the +5 s re-quote's.
+ */
+const priceLimiter = createRateLimiter({ maxRequests: 2, windowMs: WINDOW_MS });
+
+async function request(url, what, priority = "high", { keyless = false } = {}) {
   counters.requests++;
 
   const result = await getJson({
     url,
-    apiKey,
+    apiKey: keyless ? undefined : apiKey,
     priority,
-    limiter,
+    limiter: keyless ? priceLimiter : limiter,
     retry: DEFAULT_RETRY,
     onEvent: (kind, detail) => {
       counters[kind]++;
@@ -200,6 +214,8 @@ async function currentPrices() {
       const result = await request(
         priceUrl(config.baseUrl, Object.values(TOKENS).map((t) => t.mint)),
         "price v3",
+        "low",
+        { keyless: true },
       );
 
       if (result.ok) {
@@ -388,7 +404,9 @@ async function requoteOnce(pair, origin, delaySeconds, persisted) {
       slippageBps: config.slippageBps,
     }),
     label,
-    "low",
+    // Tight tolerances (+5 s: 2 s, +15 s: 3.75 s) cannot afford to queue
+    // behind a ladder window; +30 s and +60 s have 7.5-15 s and can.
+    driftToleranceMs(delaySeconds) < 5_000 ? "urgent" : "low",
   );
 
   if (!result.ok) return;

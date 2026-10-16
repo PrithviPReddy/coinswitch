@@ -428,6 +428,54 @@ describe("rate limiter", () => {
     expect(order).toEqual(["rung", "drift-1", "drift-2"]);
   });
 
+  // The 2026-10-16 bug: a ladder takes 9 of 10 slots, a +60 s re-quote takes
+  // the tenth, and the +5 s re-quote due next has nowhere to go.
+  const afterLadder = async () => {
+    const clock = fakeClock();
+    const limiter = createRateLimiter({ maxRequests: 10, windowMs: 10_000, reserve: 1, ...clock });
+    for (let i = 0; i < 9; i++) await limiter.acquire("high");
+    return { clock, limiter };
+  };
+
+  it("lets an urgent re-quote take the reserved slot at once", async () => {
+    const { clock, limiter } = await afterLadder();
+    await limiter.acquire("urgent");
+    expect(clock.now()).toBe(1_000_000);
+  });
+
+  it("makes a loose re-quote wait for the ladder window rather than take the last slot", async () => {
+    const { clock, limiter } = await afterLadder();
+    await limiter.acquire("low");
+    expect(clock.now()).toBeGreaterThanOrEqual(1_010_000);
+  });
+
+  it("wakes for an urgent request while asleep on a loose one (real timers)", async () => {
+    const limiter = createRateLimiter({ maxRequests: 3, windowMs: 400, reserve: 1 });
+    await limiter.acquire("high");
+    await limiter.acquire("high");
+
+    const loose = limiter.acquire("low"); // must wait about 400 ms
+    const started = Date.now();
+    await limiter.acquire("urgent");
+    const urgentWait = Date.now() - started;
+    await loose;
+
+    expect(urgentWait).toBeLessThan(150);
+  });
+
+  it("serves urgent before low, and high before both", async () => {
+    const clock = fakeClock();
+    const limiter = createRateLimiter({ maxRequests: 1, windowMs: 10_000, ...clock });
+    await limiter.acquire();
+    const order = [];
+    await Promise.all([
+      limiter.acquire("low").then(() => order.push("low")),
+      limiter.acquire("urgent").then(() => order.push("urgent")),
+      limiter.acquire("high").then(() => order.push("high")),
+    ]);
+    expect(order).toEqual(["high", "urgent", "low"]);
+  });
+
   it("holds every caller back while paused", async () => {
     const clock = fakeClock();
     const limiter = createRateLimiter({ maxRequests: 10, windowMs: 10_000, ...clock });

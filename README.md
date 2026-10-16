@@ -28,6 +28,53 @@ This is not an automated market maker and should not be described as one. It
 is devnet settlement against a project-operated vault, priced from live
 mainnet quotes.
 
+## Simulated fills: what is real and what is modelled
+
+Settlement is against a project vault on devnet, so there is no real market
+on the settling side. By default (`FILL_MODE=simulated`) the vault pays out
+a **simulated fill**: the server's mainnet quote, moved by one draw from the
+recorded distribution of mainnet quote drift. Every such fill is labelled
+"simulated fill" on the receipt and "sim" in the settlement log.
+
+| | Real | Modelled |
+|---|---|---|
+| Quote, route, price impact | Jupiter mainnet, fetched by the server at swap time | — |
+| Settlement transaction | Devnet, signed and confirmed; signature on Solscan | — |
+| Tokens | — | Devnet stand-ins this project mints (USDC, USDT, JUP, BONK, WIF), priced from mainnet |
+| Payout vs quote | — | A draw from recorded mainnet quote drift (below) |
+| MEV / extraction | — | **Not modelled.** It was never measured, so it is not simulated. It is a known cost this project leaves out |
+
+How the draw works:
+
+- The **sampler** (`scripts/sampler`) asks Jupiter for the same quote again
+  5, 15, 30 and 60 s later and records how much it moved (`QuoteDrift`).
+  This is the only data the fill model uses. Nothing is synthesised.
+- `npm run build:fill-model` turns that into `models/fill-model.json`:
+  101-point empirical quantiles per bucket (pair × size × 30-minute realised
+  volatility), each bucket requiring at least 20 observations. Sparse
+  buckets fall back to pair × size, then pair, then a global bucket for the
+  swap's depth class, so a thin-token swap never draws from deep-pair data.
+- At swap time the app picks the drift horizon nearest the measured
+  quote-to-confirmation latency of recent swaps (in practice +5 s). It finds
+  the most specific bucket with enough data and draws once. The draw is
+  **two-sided**: some simulated fills land above the quote.
+- The user's slippage cap is enforced against that draw. A simulated fill
+  below `quoted × (1 − slippageBps/10 000)` is recorded Failed, "slippage
+  bound exceeded", and nothing is signed.
+- Every swap row records the fill mode, the draw, the model version, the
+  fallback level and bucket, the horizon, the latency estimate and the
+  volatility it used.
+- With no artifact, or a malformed one, the app logs loudly and settles at
+  exactly the quote. It never invents a distribution.
+
+What to expect: on the deep pairs (SOL, USDC, USDT) quote drift over a few
+seconds is a few bps either way, so a 50 bps cap almost never binds. That is
+the correct result for those markets, not a bug. The cap only bites on the
+thin pairs, which is why JUP, BONK and WIF are in the app.
+
+A simulated fill is a modelled payout on devnet. It is not observed market
+execution, and nothing here should be read as measured slippage.
+
 ## Setup
 
 Requires Docker and Node 22.

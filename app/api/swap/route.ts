@@ -5,7 +5,8 @@ import db from "@/app/db";
 import { PublicKey } from "@solana/web3.js";
 import { resolveWallet } from "@/app/lib/wallets";
 import { keypairFromSecret, readBalance, settleSwap } from "@/app/lib/devnet";
-import { decideFill } from "@/app/lib/fill";
+import { getSupportedTokens } from "@/app/lib/constants";
+import { decideFillForSwap } from "@/app/lib/fillRuntime";
 import { fetchQuote } from "@/app/lib/jupiter";
 import { executeSwap, parseSwapRequest, type SwapDeps } from "@/app/lib/swap";
 import type { session as AppSession } from "@/app/lib/auth";
@@ -21,8 +22,18 @@ import type { Prisma } from "@/app/generated/prisma";
  */
 const deps: SwapDeps = {
   fetchQuote,
-  decideFill: ({ quote, slippageBps }) =>
-    decideFill({ quotedOut: quote.outAmount, slippageBps, mode: "exact" }),
+  // FILL_MODE=simulated (the default) draws the payout from recorded mainnet
+  // quote drift; exact, or a missing artifact, pays the quote. See fill.ts.
+  decideFill: async ({ quote, slippageBps, inputToken, outputToken }) => {
+    const priced = (await getSupportedTokens()).find((t) => t.mint === inputToken.mint);
+    return decideFillForSwap({
+      quote,
+      slippageBps,
+      inputToken,
+      outputToken,
+      inputUsdPrice: priced?.price ?? 0,
+    });
+  },
   readBalance,
   settleSwap,
   swaps: {

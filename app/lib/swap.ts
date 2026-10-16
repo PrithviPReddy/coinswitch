@@ -13,7 +13,7 @@
 
 import type { Keypair, PublicKey } from "@solana/web3.js";
 import { DEFAULT_SLIPPAGE_BPS, explorerTxUrl, tokenByMint, type TokenDetails } from "./constants";
-import type { FillDecision } from "./fill";
+import type { FillAudit, FillDecision } from "./fill";
 import type { Quote } from "./jupiter";
 import { QuoteError } from "./jupiter";
 import {
@@ -105,7 +105,15 @@ export type SwapDeps = {
     amount: bigint;
     slippageBps: number;
   }): Promise<Quote>;
-  decideFill(args: { quote: Quote; slippageBps: number }): FillDecision;
+  /** Decides the payout. In simulated mode this draws from recorded drift. */
+  decideFill(args: {
+    quote: Quote;
+    slippageBps: number;
+    inputToken: TokenDetails;
+    outputToken: TokenDetails;
+  }): Promise<{ decision: FillDecision; audit: FillAudit }>;
+  /** Clock, injectable for tests. */
+  now?: () => Date;
   readBalance(token: TokenDetails, owner: PublicKey): Promise<bigint>;
   settleSwap(
     args: {
@@ -152,7 +160,16 @@ export async function executeSwap(
     return { status: 502, body: { message } };
   }
 
-  const fill = deps.decideFill({ quote, slippageBps });
+  let decided: Awaited<ReturnType<SwapDeps["decideFill"]>>;
+  try {
+    decided = await deps.decideFill({ quote, slippageBps, inputToken, outputToken });
+  } catch (error) {
+    // Nothing is recorded or signed without a fill decision.
+    const reason = error instanceof Error ? error.message : String(error);
+    return { status: 502, body: { message: `Could not decide the fill: ${reason}` } };
+  }
+  const { decision: fill, audit } = decided;
+  const now = deps.now ?? (() => new Date());
 
   const inAmount = fromBaseUnits(quote.inAmount, inputToken.decimals);
   const quotedOut = fromBaseUnits(quote.outAmount, outputToken.decimals);
@@ -175,6 +192,14 @@ export async function executeSwap(
     quoteLatencyMs: quote.latencyMs,
     contextSlot: quote.contextSlot,
     otherAmountThreshold: quote.otherAmountThreshold.toString(),
+    fillMode: fill.mode,
+    simulatedShortfallBps: fill.mode === "simulated" ? fill.shortfallBps : null,
+    fillModelVersion: audit.modelVersion,
+    fillBucketLevel: audit.bucketLevel === "none" ? null : audit.bucketLevel,
+    fillBucketKey: audit.bucketKey,
+    fillHorizonSeconds: audit.horizonSeconds,
+    fillLatencyEstimateMs: audit.latencyEstimateMs,
+    fillVolatility: audit.volatility,
   });
 
   const common = {
@@ -185,6 +210,11 @@ export async function executeSwap(
     outputSymbol: outputToken.name,
     routeLabels: quote.routeLabels,
     fillMode: fill.mode,
+    simulatedShortfallBps: fill.mode === "simulated" ? fill.shortfallBps : null,
+    fillBucketLevel: audit.bucketLevel === "none" ? null : audit.bucketLevel,
+    fillBucketKey: audit.bucketKey,
+    fillHorizonSeconds: audit.horizonSeconds,
+    fillModelVersion: audit.modelVersion,
   };
 
   if (!fill.withinBound) {
@@ -220,10 +250,11 @@ export async function executeSwap(
       // the transaction.
       onSigned: async (sig) => {
         signature = sig;
-        await deps.swaps.update(swap.id, { signature: sig });
+        await deps.swaps.update(swap.id, { signature: sig, signedAt: now() });
       },
     });
     confirmed = true;
+    const confirmedAt = now();
 
     // Read back from devnet rather than copied from the fill.
     const balanceAfter = await deps.readBalance(outputToken, owner);
@@ -232,7 +263,7 @@ export async function executeSwap(
       outputToken.decimals,
     );
 
-    await deps.swaps.update(swap.id, { status: "Settled", settledOut });
+    await deps.swaps.update(swap.id, { status: "Settled", settledOut, confirmedAt });
 
     return {
       status: 200,
@@ -249,7 +280,7 @@ export async function executeSwap(
 
     // It confirmed, and only the read-back failed: the swap happened.
     if (confirmed) {
-      await deps.swaps.update(swap.id, { status: "Settled", settledOut: null });
+      await deps.swaps.update(swap.id, { status: "Settled", settledOut: null, confirmedAt: now() });
       return {
         status: 200,
         body: {
