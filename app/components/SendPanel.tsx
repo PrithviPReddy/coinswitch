@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { SUPPORTED_TOKENS, SupportedToken } from "../lib/constants";
+import { SUPPORTED_TOKENS, SupportedToken, tokenLabel } from "../lib/constants";
 import type { Wallet } from "../hooks/useWallets";
 import TxReceipt from "./TxReceipt";
 
@@ -159,7 +159,7 @@ export default function SendPanel({
           >
             {SUPPORTED_TOKENS.map((t) => (
               <option key={t.mint} value={t.mint}>
-                {t.name}
+                {tokenLabel(t)}
               </option>
             ))}
           </select>

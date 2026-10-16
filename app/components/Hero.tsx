@@ -53,7 +53,7 @@ export default function Hero() {
             <Step
               network="local"
               title="Record the quote"
-              body="The quoted figure is written to the swap log before anything is signed, so it cannot be revised after the fact."
+              body="The quoted figure is written to the swap log before anything is signed, so the record of what was promised predates the outcome."
             />
             <Step
               network="devnet"
@@ -63,7 +63,7 @@ export default function Hero() {
             <Step
               network="devnet"
               title="Read it back"
-              body="The delivered amount is read from account state after confirmation, then shown beside the quote."
+              body="Your output balance is read before and after confirmation, and the difference is shown beside the quote. It shows what the vault paid, which the app sets from the quote or a labelled simulated fill; it is not a market fill."
               last
             />
           </ol>

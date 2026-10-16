@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coinswitch/cost-model/v1",
+  "title": "CoinSwitch cost model artifact, schema version 1",
+  "description": "Written by notebooks/train_cost_model.ipynb (Colab) and read by app/lib/costModel.ts. Every inference rule is stated here so both sides compute the same numbers; `npm run validate:model` re-runs selfTestVectors and featureTestVectors through the TypeScript path and fails on any disagreement. Signs: positive impact and positive drift both mean the trader gets less. 'Pair' is always 'INPUT/OUTPUT' with token symbols, e.g. 'BONK/USDC'. PAIR RESOLUTION, used by every predictor: the source pair is the pair itself if it is in `pairs`; else its reverse if that is in `pairs` (reversed = true); else none. depth(pair) = 'thin' if either symbol is JUP, BONK or WIF, else 'deep'. A reversed source uses the reverse pair's parameters, its shortHorizon quantiles are negated (q'[k] = -q[100 - k]), and every coverage it touches is at least 'fallback'. With no source pair, predictors use depth-level parameters ('fallback').",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind", "schemaVersion", "modelVersion", "producer", "trainedAt",
+    "datasetRowCounts", "datasetTimeRange", "split", "pairs", "constants",
+    "volatility", "features", "impact", "drift", "shortHorizon",
+    "metrics", "reports", "limitations", "selfTestVectors", "featureTestVectors"
+  ],
+  "properties": {
+    "kind": { "const": "coinswitch-cost-model" },
+    "schemaVersion": { "const": 1 },
+    "modelVersion": { "type": "string", "description": "Unique per training run, e.g. cost-20261017T0930Z-ab12cd34." },
+    "producer": { "type": "string", "description": "What made this file: 'colab:notebooks/train_cost_model.ipynb' for the real model, or 'ts-reference-fit (example only)' for the committed example." },
+    "trainedAt": { "type": "string", "description": "ISO 8601 UTC." },
+    "datasetRowCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quoteSamples", "quoteDrift"],
+      "properties": {
+        "quoteSamples": { "type": "integer", "minimum": 0 },
+        "quoteDrift": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "datasetTimeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": { "from": { "type": "string" }, "to": { "type": "string" } }
+    },
+    "split": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "cutoff", "trainRows", "testRows"],
+      "description": "Time-based, never random. Rows sampled before `cutoff` train; rows at or after it test. Drift rows are split by their origin's sampledAt.",
+      "properties": {
+        "method": { "const": "time" },
+        "cutoff": { "type": "string" },
+        "trainRows": { "$ref": "#/$defs/rowCounts" },
+        "testRows": { "$ref": "#/$defs/rowCounts" }
+      }
+    },
+    "pairs": {
+      "type": "object",
+      "description": "Every sampled pair and its depth class. Thin = involves JUP, BONK or WIF.",
+      "additionalProperties": { "enum": ["deep", "thin"] }
+    },
+    "constants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baselineRung", "impactFloorBps", "maxLadderSpanSeconds", "measuredHorizons",
+        "minCellN", "minConfidentN", "quantilePoints"
+      ],
+      "properties": {
+        "baselineRung": { "const": 1, "description": "measuredImpactBps is relative to this rung (~$25) of the same ladder." },
+        "impactFloorBps": { "type": "number", "description": "Power-law fits use only rows with measuredImpactBps above this (logs of non-positive values do not exist). Metrics use every row." },
+        "maxLadderSpanSeconds": { "type": "number", "description": "Ladders whose rungs span more than this are excluded from impact fits and metrics." },
+        "measuredHorizons": { "type": "array", "items": { "type": "number" }, "minItems": 1, "description": "[5, 15, 30, 60]. A drift row belongs to horizon h when |actualElapsedMs - 1000h| <= max(2000, 250h); otherwise it is excluded." },
+        "minCellN": { "type": "integer", "minimum": 1, "description": "A shortHorizon cell is only written with at least this many observations." },
+        "minConfidentN": { "type": "integer", "minimum": 1, "description": "Below this, a prediction's coverage is 'sparse'." },
+        "quantilePoints": { "const": 101 }
+      }
+    },
+    "volatility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windowMinutes", "rung", "minReturns", "maxGapSeconds", "unit"],
+      "description": "Realised volatility at time t for a pair: take that pair's rung-1 rows with t - windowMinutes*60000 <= sampledAt <= t, in time order. For each consecutive pair of rows with 0 < dt <= maxGapSeconds*1000 ms and both prices > 0, r = ln(p_i / p_{i-1}) / sqrt(dt / 60000). If fewer than minReturns such r, volatility is null. Otherwise it is the sample standard deviation (ddof = 1) of r, times 10000. Identical to realisedVolatility in app/lib/fillModel.ts.",
+      "properties": {
+        "windowMinutes": { "const": 30 },
+        "rung": { "const": 1 },
+        "minReturns": { "const": 8 },
+        "maxGapSeconds": { "const": 600 },
+        "unit": { "const": "bps per sqrt(minute)" }
+      }
+    },
+    "features": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "description": "The drift model's features, in order, with train-set normalisation. Each feature is z = (x - mean) / std, or 0 when std is 0. x1 = sqrt(T), x2 = vol * sqrt(T / 60), x3 = isThin * sqrt(T), with T in seconds and vol in bps/sqrt(min).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "derivation", "mean", "std"],
+        "properties": {
+          "name": { "enum": ["sqrt_horizon_s", "vol_sigma_bps", "thin_sqrt_horizon_s"] },
+          "derivation": { "type": "string" },
+          "mean": { "type": "number" },
+          "std": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "baselineNotionalUsd", "perPair", "byDepth", "cells"],
+      "description": "impactBps(pair, N): params = perPair[pair], else byDepth[depth(pair)] (coverage 'fallback'). If N <= baselineNotionalUsd the result is 0. Otherwise a * (N / 1000) ^ b, floored at 0. Coverage: no params -> 'none'; fallback -> 'fallback'; N outside [notionalMinUsd, notionalMaxUsd], the notional range of ALL the pair's training rows (not only those above the floor) -> 'extrapolated'; n < minConfidentN -> 'sparse'; else 'ok', checked in that order. A pair not sampled in either direction uses byDepth.",
+      "properties": {
+        "model": { "const": "powerlaw" },
+        "baselineNotionalUsd": { "type": "number", "minimum": 0 },
+        "perPair": { "type": "object", "additionalProperties": { "$ref": "#/$defs/powerLaw" } },
+        "byDepth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "deep": { "$ref": "#/$defs/powerLaw" }, "thin": { "$ref": "#/$defs/powerLaw" } }
+        },
+        "cells": {
+          "type": "array",
+          "description": "Observation counts per pair and rung, for coverage reporting.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pair", "rung", "notionalUsd", "n"],
+            "properties": {
+              "pair": { "type": "string" },
+              "rung": { "type": "integer" },
+              "notionalUsd": { "type": "number" },
+              "n": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "drift": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "model", "alpha", "intercept", "coef", "volFallbackByPair", "volFallbackByDepth", "cells"],
+      "description": "driftAdverseBps(pair, T, vol) = max(0, intercept + sum(coef_i * z_i)) using `features`. Target: expected adverse drift E[max(0, D_T)] in bps. When vol is null it is replaced by volFallbackByPair[source pair], else volFallbackByDepth[depth] (coverage 'fallback'). Coverage: T > max(measuredHorizons) -> 'extrapolated'; fallback -> 'fallback'; cell (source pair, nearest measured horizon) n < minConfidentN or missing -> 'sparse'; else 'ok'.",
+      "properties": {
+        "target": { "type": "string" },
+        "model": { "const": "ridge" },
+        "alpha": { "type": "number", "minimum": 0 },
+        "intercept": { "type": "number" },
+        "coef": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "volFallbackByPair": { "type": "object", "additionalProperties": { "type": "number" } },
+        "volFallbackByDepth": { "type": "object", "additionalProperties": { "type": "number" } },
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pair", "horizonSeconds", "n"],
+            "properties": {
+              "pair": { "type": "string" },
+              "horizonSeconds": { "type": "number" },
+              "n": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "shortHorizon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["volTertiles", "cells"],
+      "description": "Empirical distributions of signed drift D (bps, positive = adverse) for failure probabilities. h = the measured horizon nearest T (T beyond the largest -> largest, coverage 'extrapolated'). Lookup: '<source>|<h>|<low|mid|high>' when vol and volTertiles[source] exist, then '<source>|<h>|all', then '<depth>|<h>|all' (coverage 'fallback'). volBucket: vol < t1 low, < t2 mid, else high. failureProbability(cap) = exceedance(q, cap): 1 if cap < q[0]; 0 if cap >= q[100]; else k = max{j in 0..99 : q[j] <= cap}, u = (k + (cap - q[k]) / (q[k+1] - q[k])) / 100 when q[k+1] > q[k] else (k + 1) / 100, and P = 1 - u. Coverage: fallback -> 'fallback'; n < minConfidentN -> 'sparse'; no cell -> 'none' (P null).",
+      "properties": {
+        "volTertiles": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "null" },
+              { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }
+            ]
+          }
+        },
+        "cells": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["n", "q"],
+            "properties": {
+              "n": { "type": "integer", "minimum": 1 },
+              "q": { "type": "array", "items": { "type": "number" }, "minItems": 101, "maxItems": 101 }
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Every metric is an object carrying its own sample count n (rule 3a). Keyed by target, then model, then depth class.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/metric" }
+        }
+      }
+    },
+    "reports": {
+      "type": "object",
+      "description": "Tables for the write-up, as arrays of row objects. Must include driftCoverage (3b), impactTable (3d) and directionalTest (3e); calibration is optional. Each row should carry an n.",
+      "required": ["driftCoverage", "impactTable", "directionalTest"],
+      "additionalProperties": { "type": "array", "items": { "type": "object" } }
+    },
+    "limitations": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "selfTestVectors": {
+      "type": "array",
+      "minItems": 12,
+      "description": "Inputs and the notebook's own outputs. validate:model recomputes each in TypeScript; numbers must agree within |a - b| <= 1e-6 + 1e-9 * |b|, and coverage strings exactly.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["input", "expected"],
+        "properties": {
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pair", "notionalUsd", "horizonSeconds", "capBps", "volatility"],
+            "properties": {
+              "pair": { "type": "string" },
+              "notionalUsd": { "type": "number", "minimum": 0 },
+              "horizonSeconds": { "type": "number", "minimum": 0 },
+              "capBps": { "type": "number" },
+              "volatility": { "type": ["number", "null"] }
+            }
+          },
+          "expected": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["impactBps", "driftAdverseBps", "failureProbability", "coverage"],
+            "properties": {
+              "impactBps": { "type": "number" },
+              "driftAdverseBps": { "type": "number" },
+              "failureProbability": { "type": ["number", "null"] },
+              "coverage": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["impact", "drift", "failure"],
+                "properties": {
+                  "impact": { "$ref": "#/$defs/coverage" },
+                  "drift": { "$ref": "#/$defs/coverage" },
+                  "failure": { "$ref": "#/$defs/coverage" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "featureTestVectors": {
+      "type": "array",
+      "minItems": 3,
+      "description": "Raw rung-1 price series and the notebook's volatility for them. validate:model recomputes each with the TypeScript feature code: the guard against train/serve skew in feature engineering, not just in the model.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["series", "atMs", "expectedVol"],
+        "properties": {
+          "series": {
+            "type": "array",
+            "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+            "description": "[[epochMs, price], ...] in time order."
+          },
+          "atMs": { "type": "number" },
+          "expectedVol": { "type": ["number", "null"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "rowCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["impact", "drift"],
+      "properties": {
+        "impact": { "type": "integer", "minimum": 0 },
+        "drift": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "powerLaw": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["a", "b", "n", "notionalMinUsd", "notionalMaxUsd"],
+      "properties": {
+        "a": { "type": "number", "minimum": 0 },
+        "b": { "type": "number" },
+        "n": { "type": "integer", "minimum": 0 },
+        "notionalMinUsd": { "type": "number" },
+        "notionalMaxUsd": { "type": "number" }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "required": ["n"],
+      "description": "Any of mae, rmse, brier, value, alongside n.",
+      "properties": {
+        "n": { "type": "integer", "minimum": 0 },
+        "mae": { "type": ["number", "null"] },
+        "rmse": { "type": ["number", "null"] },
+        "brier": { "type": ["number", "null"] },
+        "value": { "type": ["number", "null"] }
+      }
+    },
+    "coverage": { "enum": ["ok", "sparse", "fallback", "extrapolated", "none"] }
+  }
+}

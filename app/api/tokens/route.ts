@@ -6,6 +6,7 @@ import {
   TokenDetails,
 } from "@/app/lib/constants";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { MintConfigError, requireDevnetMint } from "@/app/lib/devnet";
 
 /**
  * Balances are read from devnet, because devnet is where this wallet's tokens
@@ -36,9 +37,19 @@ export async function GET(req: NextRequest) {
 
   const supportedTokens = await getSupportedTokens();
 
-  const balances = await Promise.all(
-    supportedTokens.map((token) => getAccountBalance(token, owner)),
-  );
+  let balances: number[];
+  try {
+    balances = await Promise.all(
+      supportedTokens.map((token) => getAccountBalance(token, owner)),
+    );
+  } catch (error) {
+    // A missing mint would otherwise read as an empty balance, which looks
+    // like an unfunded wallet rather than a setup step that never ran.
+    if (error instanceof MintConfigError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
+    throw error;
+  }
 
   const tokens = supportedTokens.map((token, index) => {
     const balance = balances[index];
@@ -58,12 +69,7 @@ async function getAccountBalance(token: TokenDetails, owner: PublicKey) {
     return balance / LAMPORTS_PER_SOL;
   }
 
-  if (!token.devnetMint) return 0;
-
-  const ata = getAssociatedTokenAddressSync(
-    new PublicKey(token.devnetMint),
-    owner,
-  );
+  const ata = getAssociatedTokenAddressSync(requireDevnetMint(token), owner);
 
   try {
     const account = await getAccount(devnetConnection, ata);

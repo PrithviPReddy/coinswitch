@@ -33,8 +33,9 @@ export default function SignIn() {
     <main className="mx-auto max-w-md px-6 py-20">
       <h1 className="text-3xl text-ink">Sign in</h1>
       <p className="mt-3 text-sm leading-relaxed text-ink-soft">
-        A devnet wallet is created for your account on first sign-in and funded
-        from the project vault.
+        A devnet wallet is created for your account on first sign-in. It starts
+        empty: press Fund from vault in the terminal to top it up
+        with devnet SOL and the project&apos;s stand-in tokens.
       </p>
 
       <div className="panel mt-8 p-6">

@@ -37,11 +37,14 @@ export default function Terminal({
   const [tab, setTab] = useState<Tab>("swap");
   const [funding, setFunding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // A full-width row under the grid, where the swap panel puts its
+  // settlement log; the log has more columns than the swap column fits.
+  const [ledgerSlot, setLedgerSlot] = useState<HTMLDivElement | null>(null);
 
   const publicKey = selected?.publicKey ?? "";
   const walletId = selected?.id ?? "";
 
-  const { tokenBalances, refresh } = useTokens(publicKey);
+  const { tokenBalances, error: balanceError, refresh } = useTokens(publicKey);
 
   const balanceOf = (token: SupportedToken) =>
     tokenBalances?.tokens.find((t) => t.mint === token.mint)?.balance ?? 0;
@@ -104,6 +107,7 @@ export default function Terminal({
               walletId={walletId}
               balanceOf={balanceOf}
               onBalancesChanged={refresh}
+              ledgerSlot={ledgerSlot}
             />
           ) : (
             <SendPanel
@@ -139,6 +143,10 @@ export default function Terminal({
           <div className="panel p-6">
             <h2 className="text-base text-ink">Balances</h2>
 
+            {balanceError && (
+              <p className="mt-3 text-sm text-flag">{balanceError}</p>
+            )}
+
             <ul className="mt-4 space-y-3.5">
               {SUPPORTED_TOKENS.map((token) => (
                 <li
@@ -154,6 +162,9 @@ export default function Terminal({
                       className="rounded-full"
                     />
                     <span className="text-sm text-ink">{token.name}</span>
+                    {!token.native && (
+                      <span className="text-[11px] text-ink-faint">stand-in</span>
+                    )}
                   </span>
                   <span className="figure text-sm text-ink">
                     {balanceOf(token).toFixed(4)}
@@ -164,6 +175,8 @@ export default function Terminal({
           </div>
         </aside>
       </div>
+
+      <div ref={setLedgerSlot} />
     </main>
   );
 }

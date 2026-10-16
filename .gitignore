@@ -46,3 +46,11 @@ next-env.d.ts
 
 .vault.json
 .env
+
+report.md
+
+# Devnet mint addresses written by setup-devnet.
+.mints.json
+
+# CSV dumps from scripts/export-samples.mjs.
+/exports
