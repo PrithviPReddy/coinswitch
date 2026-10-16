@@ -447,8 +447,57 @@ unit tests.
   - the full-width log
   - /api/advice rejects bad input with 400s
 
+### After the backtest review (2026-10-16/17)
+- **TIGHTEN_AND_RETRY is gated on fill probability.** It is eligible only
+  if its predicted probability of ending unfilled is at least 1 percentage
+  point below one order's at the user's cap, and at most half of it
+  (`tightenMinFillGain` 0.01, `tightenMaxFailureShare` 0.5). Cost then
+  decides among eligible plans. 30 advisor tests.
+  - **Why cost alone was wrong:** the prediction charges execution drift
+    only for the attempt that fills, so a tight cap looks as if it dodges
+    adverse moves. A rejected attempt does not undo the move.
+  - That is how 1.25 bps × 2 tries was chosen for 899 of 1,092 deep orders
+    at cap 5, although its predicted unfilled rate (8.4%) was above one
+    order's (2.5%). The predicted cost of tightened plans is still
+    optimistic; this is documented as a limitation.
+- **Backtest retry bug fixed.** Retries interpolated the drift path, so
+  attempts 2 and 3 were identical halves of the 5–15 s move. They now use
+  the recorded windows (0–5, 5–15, 15–30 s), and a missing window is never
+  invented.
+  - Recorded consecutive windows are close to independent: correlation
+    0.04 deep, −0.03 thin, n ≈ 150 held-out paths each.
+- **Result at cap 5, gated, recorded windows:**
+  - Deep: chosen for 826 of 1,092 orders (2.5 bps × 3 tries). Unfilled 7
+    (0.8%) against 28 (3.4%) for one order on the same orders; cost −0.04
+    bps (CI −0.54 to +0.49).
+  - Thin: chosen for 233 orders. Unfilled 10 (4.3%) against 21 (9.0%);
+    cost −0.10 bps (CI −0.97 to +0.79).
+  - The advisor is worse than the control on 6% of deep orders (was 15%).
+    The earlier "4.5% → 4.4%" came from the ungated plan plus the
+    interpolation bug.
+  - **Gap:** the 266 deep orders the gate kept as SEND_NOW sit in sparse
+    volatility cells (n ≈ 20) that predict a 5 bps cap is never missed.
+    21 of them (7.9%) missed it.
+  - TIGHTEN stays on, reported as a fill-reliability mechanism.
+- **Deep $1M watch block** in the backtest report (README and summary.json
+  only; `orders.csv` is byte-identical):
+  - Example artifact: 156 orders, 154 with a finite breakeven ρ (median
+    0.348). One order's cost has a median of 8.88 bps.
+  - Impact is recorded at 8.34 bps against 3.16 predicted, and the advisor
+    chooses SPLIT for 0 of 156.
+  - Report whether this changes after the final fit.
+- The README discloses where the backtest interpolates: impact between
+  rungs, and drift between horizons for split portions.
+- **Outage:** Docker Desktop quit at 17:59 UTC on 2026-10-16. Postgres had
+  no restart policy, so the sampler had no database until 18:43:57 UTC
+  (**~45 min of data lost**). Docker was restarted and Postgres given
+  `restart: unless-stopped` (compose file, plus `docker update` on the
+  running container). `caffeinate` was re-armed on the new backend PID.
+
 ## Demo-day checklist (add to it as things come up)
 
+- [ ] Docker Desktop running, and `docker compose ps` shows postgres and
+      sampler up. (It quit once overnight; both now restart with it.)
 - [ ] `docker compose up --build`: the app image predates P1.
 - [ ] `npm run build:fill-model`, then commit the artifact version used
       (the startup log prints the version and its age, and warns over 12 h).
@@ -486,9 +535,19 @@ unit tests.
 
 ## Blocked / open
 
-- **Waiting on the final Colab fit.** Then: validate, both backtest runs,
-  the low-confidence change (thin will likely stay near 100% from the 60 s
-  horizon alone), the regret 2×2 and the recomputed impact table.
+- **Waiting on the final Colab fit.** Then report:
+  - validation
+  - both backtest runs
+  - the low-confidence change (thin will likely stay near 100% from the
+    60 s horizon alone)
+  - the regret 2×2 and the recomputed impact table
+  - TIGHTEN under the gate
+  - whether the deep $1M orders start getting SPLIT
+- **The "piecewise log-log fit" doesn't exist yet.** The cost-model
+  contract allows one power law per pair, and neither the notebook nor the
+  loader has a piecewise fit. A piecewise impact needs a contract extension
+  (schema, loader, reference fit, notebook, test vectors) before a Colab
+  artifact can carry it. Raised with the user.
 - **The Docker app image predates P1.** `docker compose up --build` picks it
   up. Note that rebuilding also recreates the sampler (a few seconds' gap).
 - (Resolved in P1: Pending swaps are reconciled against devnet when the log

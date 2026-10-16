@@ -202,7 +202,7 @@ the final report.)
 |---|---|
 | SEND_NOW | one order at full size |
 | SPLIT(k, W) | k portions over W seconds (k from 2 to 24, W from 30 s to 15 min, at least 10 s between portions), each with a fresh quote and the user's cap |
-| TIGHTEN_AND_RETRY(c, R) | a tighter cap c, retried up to R times |
+| TIGHTEN_AND_RETRY(c, R) | a tighter cap c, retried up to R times. A fill-reliability mechanism: only offered when it materially cuts the chance of ending unfilled (below) |
 | DEFER | wait, when the time-varying part of the cost is elevated against its norm. **Off in the shipped advisor** (below) |
 
 - **φ is what a failed fill actually loses**: its fee ($0.002 assumed) plus
@@ -252,7 +252,7 @@ worst 5%):
 | ρ = 0 | 0 (mean 0) | 0 (mean 0) |
 
 At the 5 bps cap the picture is the same: +167.8 against −1.2 (mean −3.2,
-worst 5% −76.5), and the ρ = 0 row has a mean of −0.8.
+worst 5% −76.5), and the ρ = 0 row has a mean of −1.4.
 
 **The asymmetry holds.** Being wrong about ρ = 1 costs a median of about
 1 bps, because at ρ = 0 the portions together pay the same impact as one
@@ -300,24 +300,55 @@ structural split stays, because it decides what the advice says. When an
 order is expensive because the pool is thin, *this cost is structural —
 waiting will not help.*
 
-### TIGHTEN_AND_RETRY at a tight cap
+### TIGHTEN_AND_RETRY: a fill-reliability mechanism, not a cost saver
 
-At a 50 bps cap the advisor never chooses TIGHTEN_AND_RETRY; no fill came
-near the cap. The backtest therefore also runs at a **5 bps cap**, where
-failures happen:
+TIGHTEN_AND_RETRY sends the full order with a tighter cap and retries up to
+R times. What it can do is make an order less likely to **end unfilled**.
+What it cannot do is save money: a rejected attempt does not undo the price
+move that rejected it, and the retry starts from the moved price.
 
-| 5 bps cap | chosen | mean saved, bps (95% CI) | beat control | worse | its failure rate | control's, same orders |
+So the advisor offers it only when it **materially improves the predicted
+chance of filling**. Against one order at the user's cap, its predicted
+probability of ending unfilled must fall by at least 1 percentage point and
+to at most half (`tightenMinFillGain`, `tightenMaxFailureShare`). Among the
+plans that pass, cost decides as usual. Tying or winning on cost is not
+enough. Before this gate the advisor chose a 1.25 bps cap with 2 tries for
+899 of 1,092 deep orders at a 5 bps cap: a plan predicted to leave the order
+unfilled *more* often (8.4% against 2.5%), chosen because its predicted cost
+was lower. That cost edge is an artefact. The prediction charges execution
+drift only for the attempt that fills, so a tight cap looks as if it dodges
+adverse moves. It is why cost alone cannot be the rule, and it means the
+predicted cost the app shows for a tightened plan is optimistic.
+
+At a 50 bps cap no fill came near the cap, so TIGHTEN_AND_RETRY is never
+offered. The backtest also runs at a **5 bps cap**, where failures happen.
+There, with the gate:
+
+| 5 bps cap | chosen | plans | ended unfilled | one order, same orders | mean saved, bps (95% CI) | better / worse than one order |
 |---|---|---|---|---|---|---|
-| deep | 1,092 of 1,092 | +0.13 (−0.35 to +0.49) | 162 | 166 | 4% | 4% |
-| thin | 233 of 1,085 | −0.48 (−0.96 to +0.03) | 29 | 36 | 6% | 9% |
+| deep | 826 of 1,092 | 2.5 bps × 3 tries (825), 3.75 × 2 (1) | 7 (0.8%) | 28 (3.4%) | −0.04 (−0.54 to +0.49) | 73 / 67 |
+| thin | 233 of 1,085 | 1.25 × 3 (162), 2.5 × 2 (70), 3.75 × 2 (1) | 10 (4.3%) | 21 (9.0%) | −0.10 (−0.97 to +0.79) | 31 / 32 |
 
-**TIGHTEN_AND_RETRY does not beat the control.** The advisor picks it
-whenever the cap is tight, because its predicted cost is marginally lower,
-but the realised difference is a wash on deep pairs and slightly negative on
-thin ones. On thin pairs it fails a little less often, which does not turn
-into a saving. One bias to note: retries are priced on recorded 5→15 s and
-15→30 s moves, so the backtest's retry gap is 10–15 s rather than 5 s, which
-overstates retry drift and works against this mode.
+**It does what it is for: cost-neutral, failure-reducing where it bites.**
+Where it is chosen, it cuts orders that end unfilled by about three-quarters
+on deep pairs and by half on thin ones, and its cost is indistinguishable
+from sending one order. Unlike DEFER it stays on.
+
+Three caveats:
+
+- **The gate is only as good as the predicted failure probability.** The 266
+  deep orders where the gate kept one order sit in sparse volatility cells
+  (n ≈ 20) that predict a 5 bps cap is never missed. In the backtest, 21 of
+  them (7.9%) missed it. Those predictions are flagged low confidence.
+- **The backtest retries on recorded windows**: 0–5 s, then 5–15 s, then
+  15–30 s. Later attempts therefore take 10–15 s rather than 5 s, which
+  overstates retry drift and works against this mode. (An earlier version
+  interpolated the path, which made the second and third attempts identical
+  halves of the 5–15 s move. The first review of this mode, "4.5% → 4.4%
+  failures on deep", came from that bug and the ungated plan.)
+- **Consecutive recorded windows are close to independent** (correlation
+  0.04 deep, −0.03 thin, n ≈ 150 paths each), which is what the advisor's
+  p^R assumes.
 
 ## Backtest
 
@@ -331,7 +362,11 @@ This replays the real TypeScript advisor over **held-out** recorded quotes:
 orders after the model's training cutoff, one at each recorded rung size.
 The orders are hypothetical, but every cost charged to them is read from
 recorded quotes: the impact curve of their ladder, the recorded drift path,
-and the recorded failures. A fill that misses its cap is completed at the
+and the recorded failures. Between recorded points it interpolates: impact
+linearly in log-notional between a ladder's rungs (for split portions and
+completions), and drift linearly between the +5/15/30/60 s re-quotes (for
+split portions only). Single orders and retries use recorded points
+directly. A fill that misses its cap is completed at the
 pair's next recorded ladder, so every strategy ends filled and not trading
 never counts as a saving. The advisor is compared with always-SEND_NOW (the
 control) and a fixed 4-way split over 30 s, across ρ ∈ [0, 1], with deep and
@@ -360,12 +395,12 @@ TypeScript reference fit), not the Colab model, on data up to 2026-10-16
 
 | depth | ρ | mean | median | worse than control | failure rate ctl / advisor / fixed split | advisor's choices |
 |---|---|---|---|---|---|---|
-| deep | any | 0.13 | 0 | 15% (166) | 4% / 4% / 5% | TIGHTEN_AND_RETRY 1,092 |
-| thin | 1.0 | 853.2 | 27.8 | 6% (68) | 6% / 16% / 9% | SPLIT 852, TIGHTEN_AND_RETRY 233 |
-| thin | 0.5 | 681.4 | 24.6 | 9% (101) | 6% / 17% / 9% | SPLIT 829, TIGHTEN_AND_RETRY 256 |
-| thin | 0.0 | −0.61 | 0 | 13% (136) | 6% / 5% / 9% | TIGHTEN_AND_RETRY 1,085 |
+| deep | any | −0.03 | 0 | 6% (67) | 4.5% / 2.6% / 5% | TIGHTEN_AND_RETRY 826, SEND_NOW 266 |
+| thin | 1.0 | 853.3 | 27.8 | 6% (64) | 6% / 15% / 9% | SPLIT 852, TIGHTEN_AND_RETRY 233 |
+| thin | 0.5 | 681.5 | 24.6 | 9% (97) | 6% / 17% / 9% | SPLIT 829, TIGHTEN_AND_RETRY 256 |
+| thin | 0.0 | −0.82 | 0 | 13% (136) | 6% / 3% / 9% | TIGHTEN_AND_RETRY 1,085 |
 
-At 5 bps a split fails more often than one order (16% against 6% on thin
+At 5 bps a split fails more often than one order (15% against 6% on thin
 pairs), because each of its k portions is another chance to miss the cap. An
 order counts as failed if any portion missed; the missed portions are
 completed later, on top of whatever displacement the filled portions left.
@@ -421,7 +456,9 @@ quote:
   since the two can differ (for a ~$30k BONK order at the time of writing:
   187 bps on the live quote, 292 predicted);
 - which artifact produced the advice. The example artifact is labelled as
-  such.
+  such;
+- "not offered" beside Tighten and retry when it would not make a fill
+  materially more likely, with the predicted figures on hover.
 
 The panel is advisory. The swap button still sends one order: split
 execution is not implemented in the app.
@@ -596,6 +633,10 @@ under the tab.
 - **The example artifact.** Until the Colab model is at
   `models/cost-model.json`, the app and the backtest use the TypeScript
   reference fit, labelled as such wherever it is used.
+- **Optimistic tightened-plan costs.** The predicted cost of
+  TIGHTEN_AND_RETRY charges drift only for the attempt that fills, so it is
+  understated. The plan is offered for reliability, not on cost, and the
+  backtest prices it on recorded paths, where it comes out cost-neutral.
 - **Model against live quote.** The cost model's impact for an order can
   differ substantially from the live quote's (the advice panel shows both).
   The plans are compared on the model's figures.

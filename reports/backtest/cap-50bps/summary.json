@@ -10,7 +10,7 @@
     "to": "2026-10-16T14:24:15.130Z",
     "orders": 2177
   },
-  "generatedAt": "2026-10-16T16:56:40.530Z",
+  "generatedAt": "2026-10-16T18:45:19.068Z",
   "advisorParams": {
     "latencySeconds": 5,
     "feeUsd": 0.002,
@@ -1075,5 +1075,38 @@
         "worst5pct": 0
       }
     }
+  },
+  "deepMillion": {
+    "n": 156,
+    "finiteBreakeven": 154,
+    "breakevenRhoMedian": 0.348,
+    "controlMedianBps": 8.88,
+    "recordedImpactMedianBps": 8.34,
+    "predictedImpactMedianBps": 3.16,
+    "splitChosenRho1": 0,
+    "modesRho1": "SEND_NOW 156",
+    "byPair": [
+      {
+        "pair": "USDC/SOL",
+        "n": 55,
+        "recordedImpactMedianBps": 8.21,
+        "predictedImpactMedianBps": 3.16,
+        "splitChosenRho1": 0
+      },
+      {
+        "pair": "SOL/USDT",
+        "n": 53,
+        "recordedImpactMedianBps": 10.62,
+        "predictedImpactMedianBps": 3.06,
+        "splitChosenRho1": 0
+      },
+      {
+        "pair": "SOL/USDC",
+        "n": 48,
+        "recordedImpactMedianBps": 7.01,
+        "predictedImpactMedianBps": 3.43,
+        "splitChosenRho1": 0
+      }
+    ]
   }
 }

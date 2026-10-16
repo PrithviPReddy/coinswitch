@@ -58,7 +58,17 @@ Each chosen plan carries the worst coverage among its parts. *sparse*: a cell wi
 | thin | SEND_NOW | 229 | 0 | 0 | 229 | 0 | 0 | 1 |
 | thin | SPLIT | 856 | 0 | 0 | 133 | 723 | 0 | 1 |
 
-### TIGHTEN_AND_RETRY
+### Watch: deep pairs at ~$1M
+
+156 orders; 154 have a finite breakeven rho (median 0.348). One order's recorded cost: median 8.88 bps. Impact, recorded 8.34 bps against 3.16 predicted. **The advisor chooses SPLIT for 0 of 156** at rho = 1 (SEND_NOW 156).
+
+| pair | n | recorded impact median bps | predicted | SPLIT chosen, rho = 1 |
+|---|---|---|---|---|
+| USDC/SOL | 55 | 8.21 | 3.16 | 0 |
+| SOL/USDT | 53 | 10.62 | 3.06 | 0 |
+| SOL/USDC | 48 | 7.01 | 3.43 | 0 |
+
+### TIGHTEN_AND_RETRY (offered only when it materially improves predicted fill probability)
 
 | depth | chosen | of orders | median saved bps | mean saved | mean, 95% CI | beat control | worse than control | its failure rate | control failure rate, same orders |
 |---|---|---|---|---|---|---|---|---|---|
@@ -145,7 +155,17 @@ Each chosen plan carries the worst coverage among its parts. *sparse*: a cell wi
 | thin | TIGHTEN_AND_RETRY | 233 | 0 | 0 | 233 | 0 | 0 | 1 |
 | thin | SPLIT | 852 | 0 | 0 | 131 | 721 | 0 | 1 |
 
-### TIGHTEN_AND_RETRY
+### Watch: deep pairs at ~$1M
+
+156 orders; 154 have a finite breakeven rho (median 0.348). One order's recorded cost: median 8.88 bps. Impact, recorded 8.34 bps against 3.16 predicted. **The advisor chooses SPLIT for 0 of 156** at rho = 1 (TIGHTEN_AND_RETRY 118, SEND_NOW 38).
+
+| pair | n | recorded impact median bps | predicted | SPLIT chosen, rho = 1 |
+|---|---|---|---|---|
+| USDC/SOL | 55 | 8.21 | 3.16 | 0 |
+| SOL/USDT | 53 | 10.62 | 3.06 | 0 |
+| SOL/USDC | 48 | 7.01 | 3.43 | 0 |
+
+### TIGHTEN_AND_RETRY (offered only when it materially improves predicted fill probability)
 
 | depth | chosen | of orders | median saved bps | mean saved | mean, 95% CI | beat control | worse than control | its failure rate | control failure rate, same orders |
 |---|---|---|---|---|---|---|---|---|---|
