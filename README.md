@@ -87,6 +87,108 @@ mean trading that size in BONK costs that much in general. Nobody sensible
 would execute it that way, and showing that is exactly what the advisor is
 for.
 
+## What the cost model found
+
+The cost model (`notebooks/train_cost_model.ipynb`, served by
+`app/lib/costModel.ts`) has three targets. Its findings, from a time-based
+train/test split with deep and thin pairs reported separately:
+
+1. **Price impact is predictable from size and depth.** A power law per pair
+   beats a ridge baseline on thin pairs by a wide margin (reference fit: test
+   MAE 189 vs 1,038 bps, n=986). On deep pairs, where impact is a few bps at
+   most, the two are about even.
+2. **Short-horizon drift is not predictable beyond its mean at this data
+   scale.** A ridge on horizon and realised volatility does *worse* out of
+   sample than predicting the training mean (reference fit: deep MAE 2.55 vs
+   2.35 bps, n=215; thin 2.54 vs 2.33 bps, n=216). This is a finding, not a
+   gap waiting to be filled with more features: over seconds, the price moves
+   about as much as it usually does, and knowing recent volatility does not
+   say which way or by how much more.
+3. **Failure probability is still estimable** (P(drift beats the cap)),
+   empirically from the recorded drift distribution, even though conditional
+   prediction of drift fails. It is reported with a calibration table.
+
+This is also why the advisor works where it matters. Its cost is dominated
+by impact precisely in the cases where its advice differs from "send it now",
+which are large orders in thin pools. Impact is the part the model predicts
+well.
+
+(Figures above are from the TypeScript reference fit,
+`models/cost-model.example.json`. The Colab model's figures replace them in
+the final report.)
+
+## The execution-mode advisor
+
+`app/lib/advisor.ts` prices four modes, all in bps of notional:
+
+  C(m) = impact + execution drift + waiting drift + p(fail) · φ + fees
+
+| Mode | What it does |
+|---|---|
+| SEND_NOW | one order at full size |
+| SPLIT(k, W) | k portions over W seconds, each with its own fresh quote and the user's cap |
+| TIGHTEN_AND_RETRY(c, R) | a tighter cap c, retried up to R times |
+| DEFER | wait, when the time-varying part of the cost is elevated against its own norm |
+
+- **φ is what a failed fill actually loses**: its fee ($0.002 assumed) plus
+  the expected adverse drift over one ~5 s retry cycle. On a large order it
+  is negligible ($0.002 on $200k is 0.0001 bps). It does no real work there,
+  and the write-up does not pretend otherwise.
+- **Cost is split into structural (impact and fees: depth) and transient
+  (drift and failure: volatility).** DEFER looks only at the transient part,
+  because waiting does not fix depth. When an order is expensive because the
+  pool is thin, the advisor says so: *this cost is structural — waiting will
+  not help.* A user's maximum acceptable cost is a separate check.
+- **Every prediction carries a coverage flag** (`ok`, `sparse`, `fallback`,
+  `extrapolated`, `none`). The advice is marked low confidence when any part
+  of it comes from thin or borrowed data.
+
+### Pool recovery is unmeasured, so the result is a bracket
+
+SPLIT only saves money if the pool recovers between portions: if the next
+portion lands on a pool still displaced by the last one, it pays most of
+the same impact again. The share of displacement that has decayed between
+portions is the **recovery fraction ρ**. At ρ = 1 every portion pays impact
+at its own size (the optimistic bound). At ρ = 0 the portions together pay
+exactly what one order would, and splitting saves nothing.
+
+**ρ is not measured, and cannot be measured from this dataset.** The
+sampler only ever *asks* for quotes; it never trades. So no recorded quote
+was ever moved by an order of ours, and there is nothing to watch recover.
+Measuring ρ needs a pool to be displaced and then observed:
+
+- **by trading:** execute real mainnet swaps of known size on the thin
+  pools, then re-quote the same size every second or so for a minute, and
+  measure how much of the displacement remains at each interval; or
+- **without trading:** an event study on other people's large swaps. Watch
+  the chain for large swaps in these pools, re-quote immediately and at
+  intervals afterwards, and fit the decay. This needs a chain subscription
+  and a faster sampler, but no capital at risk.
+
+Until then, the backtest reports every SPLIT result **across ρ from 0 to 1**:
+the saving at both bounds, the saving as a function of ρ, the breakeven ρ at
+which splitting stops paying, and whether the advisor's choice flips
+between the bounds.
+
+## Backtest
+
+```bash
+npm run backtest                  # models/cost-model.json, else the example artifact
+npm run backtest -- path/to/model.json
+```
+
+This replays the real TypeScript advisor over **held-out** recorded quotes:
+orders after the model's training cutoff, at every recorded rung size. What
+each mode would have cost is read from the recorded series. The advisor is
+compared with always-SEND_NOW (the control) and a fixed 4-way split, across
+ρ ∈ [0, 1], with deep and thin pairs separate.
+
+The output in `reports/backtest/` covers: the mean and median saving, the
+distribution, failure rates, fee spend, the share of orders where the
+advisor did worse than the control, whether deferring actually helped, the
+breakeven ρ by size, and the low-confidence count per row. The summary
+names the artifact that produced it.
+
 ## Setup
 
 Requires Docker and Node 22.

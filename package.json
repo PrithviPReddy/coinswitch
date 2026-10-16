@@ -21,7 +21,8 @@
     "build:fill-model": "vite-node scripts/build-fill-model.ts",
     "validate:model": "vite-node scripts/validate-model.ts",
     "fit:example-model": "vite-node scripts/cost-model-reference-fit.ts",
-    "build:notebook": "node scripts/build-notebook.mjs"
+    "build:notebook": "node scripts/build-notebook.mjs",
+    "backtest": "vite-node scripts/backtest.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

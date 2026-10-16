@@ -303,6 +303,58 @@ unit tests.
     the final Colab fit late**, once the time split's training window
     includes post-fix data.
 
+### P4 corrections (2026-10-16)
+- **φ** = fee ($0.002) + expected adverse drift over one retry cycle (5 s),
+  both configurable. Negligible on large orders (0.0001 bps of fee at $200k).
+- **DEFER now acts on the transient part only.** Cost splits into structural
+  (impact + fees) and transient (drift + failure). DEFER fires when transient
+  ≥ 2× its value at the pair's normal volatility and ≥ 1 bps above it.
+  `maxCostBps` is a separate willingness-to-pay check. When most of the cost
+  is structural, the advice says "this cost is structural — waiting will not
+  help."
+- **Recovery ρ** is a parameter (`recoveryFraction`). `splitImpactBps`
+  carries unrecovered displacement forward: ρ=1 is impact at N/k, ρ=0 is
+  exactly SEND_NOW's impact. The same function prices the advisor's
+  predictions and the backtest's recorded outcomes. 27 advisor tests.
+
+### P5 — backtest (2026-10-16, against the EXAMPLE artifact)
+- `npm run backtest [model]` writes `reports/backtest/`: `orders.csv`,
+  `summary.json`, `summary.md` and charts (SVG, plus PNG via Quick Look).
+- **Setup:**
+  - 1,850 held-out orders (rung sizes ~$100–$1M) from ladders after the
+    training cutoff that have a recorded +5 s re-quote.
+  - The real advisor uses only the model and past volatility.
+  - Realised costs come from recorded impact curves, recorded drift paths
+    and recorded failures, swept over ρ ∈ {0, 0.1, …, 1}.
+  - Strategies: the advisor, always-SEND_NOW (control), and a fixed 4×30 s
+    split.
+- **Example-artifact results** (to be re-run with the Colab model):
+  - **Deep:** the advisor always chooses SEND_NOW, so it equals the control
+    (0 bps saved, never worse). A split never pays below ~$200k; at $1M the
+    breakeven ρ is 0.345.
+  - **Thin at ρ=1:** median saving 28 bps; by size, $10k 33 bps, $40k 123,
+    $200k 607, $1M 2,417. **Worse than the control in 3% of orders (27).**
+  - **Thin at ρ=0:** the advisor switches to SEND_NOW everywhere and saves
+    nothing; the choice flips for every order of $10k and up.
+  - **Breakeven ρ for thin pairs** falls with size: 0.25 at $500, 0.11 at
+    $2k, 0.06 at $10k, 0.01 at $40k, 0.003 at $200k.
+  - **DEFER does not help:** of 95 thin deferrals at ρ=1, deferring was
+    cheaper in 41, with a mean gain of −0.77 bps. This is consistent with
+    the drift finding: DEFER triggers on volatility, which does not predict
+    drift.
+  - Failure rate 0% at a 50 bps cap in every strategy. Advisor fee spend on
+    thin is $26.73 against $1.86 for the control.
+  - Low confidence: thin 100%, deep ~62% (see the P4 coverage note).
+- **Corrections made while building:**
+  - Breakeven ρ was first computed on realised cost, where drift luck at
+    ρ=0 decides the answer. It is now "the smallest ρ at which the recorded
+    impact saving covers the extra fees and the predicted waiting-drift
+    risk".
+  - DEFER is now realised as the *same plan* executed at the next ladder
+    with a recorded drift path, not as SEND_NOW.
+- README: the cost-model findings (drift written as a finding), the advisor
+  decomposition, and the ρ statement, including how ρ could be measured.
+
 ## Demo-day checklist (add to it as things come up)
 
 - [ ] `docker compose up --build`: the app image predates P1.
