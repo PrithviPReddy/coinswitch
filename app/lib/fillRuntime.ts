@@ -24,6 +24,9 @@ import type { Quote } from "./jupiter";
 
 const ARTIFACT_PATH = path.resolve(process.env.FILL_MODEL_PATH || "models/fill-model.json");
 
+/** Older than this and the startup log says so, loudly. */
+const STALE_AFTER_HOURS = 12;
+
 /** FILL_MODE=exact | simulated, simulated unless set otherwise. */
 export function configuredFillMode(): FillMode {
   const raw = (process.env.FILL_MODE || "simulated").trim().toLowerCase();
@@ -60,7 +63,17 @@ export function loadFillArtifact(): { artifact: FillArtifact | null; reason: str
   if (reason) {
     console.error(`[fill] ${"!".repeat(8)} SIMULATED FILLS ARE OFF: ${reason}. Every swap will settle at exactly the quote.`);
   } else {
-    console.log(`[fill] simulated fills on, model ${artifact!.version}`);
+    const ageHours = (Date.now() - Date.parse(artifact!.builtAt)) / 3_600_000;
+    console.log(
+      `[fill] simulated fills on, model ${artifact!.version}, built ${ageHours.toFixed(1)} h ago ` +
+        `from drift up to ${artifact!.dataset.to}`,
+    );
+    if (!(ageHours <= STALE_AFTER_HOURS)) {
+      console.warn(
+        `[fill] ${"!".repeat(8)} THE FILL MODEL IS ${ageHours.toFixed(1)} HOURS OLD (over ${STALE_AFTER_HOURS} h). ` +
+          "Fills draw from stale drift. Rebuild with `npm run build:fill-model` before a demo.",
+      );
+    }
   }
 
   cached = { artifact, reason };

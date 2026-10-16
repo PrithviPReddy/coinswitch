@@ -75,6 +75,18 @@ thin pairs, which is why JUP, BONK and WIF are in the app.
 A simulated fill is a modelled payout on devnet. It is not observed market
 execution, and nothing here should be read as measured slippage.
 
+### What the thin-pair cost figures mean
+
+The impact figures for JUP, BONK and WIF are the cost of **naive on-chain
+execution**: one market order routed through Jupiter's on-chain AMM
+liquidity, as priced by its `swap/v1` quote. That quote does not see RFQ
+market makers, OTC desks or centralised venues, which is where a real
+$200k–$1M order in these tokens would go. So "selling $1M of BONK costs about
+85%" means **sending it as one on-chain swap** costs about 85%. It does not
+mean trading that size in BONK costs that much in general. Nobody sensible
+would execute it that way, and showing that is exactly what the advisor is
+for.
+
 ## Setup
 
 Requires Docker and Node 22.

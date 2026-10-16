@@ -18,7 +18,10 @@
     "export:samples": "node scripts/export-samples.mjs",
     "db:migrate": "prisma migrate deploy",
     "postinstall": "prisma generate",
-    "build:fill-model": "vite-node scripts/build-fill-model.ts"
+    "build:fill-model": "vite-node scripts/build-fill-model.ts",
+    "validate:model": "vite-node scripts/validate-model.ts",
+    "fit:example-model": "vite-node scripts/cost-model-reference-fit.ts",
+    "build:notebook": "node scripts/build-notebook.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
