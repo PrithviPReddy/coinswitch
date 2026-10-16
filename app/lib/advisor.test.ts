@@ -118,10 +118,40 @@ describe("advise: the mode each market calls for", () => {
     expect(a.explanation).toMatch(/This cost is structural — waiting will not help/);
   });
 
-  it("tightens and retries when short-horizon drift has a long adverse tail", () => {
-    const a = advise(VOLATILE, order("WIF/USDC", 1_000));
+  it("tightens and retries when that materially cuts the chance of ending unfilled", () => {
+    // A long adverse tail and a 20 bps cap: one order misses half the time.
+    const a = advise(VOLATILE, order("WIF/USDC", 1_000, 20));
+    expect(a.byMode.SEND_NOW.cost.failureProbability).toBeCloseTo(0.5, 2);
     expect(a.mode).toBe("TIGHTEN_AND_RETRY");
-    expect(a.best.cost.executionDriftBps).toBeLessThan(a.byMode.SEND_NOW.cost.executionDriftBps);
+    expect(a.best.eligible).toBe(true);
+    expect(a.best.cost.failureProbability).toBeLessThanOrEqual(0.5 * a.byMode.SEND_NOW.cost.failureProbability);
+    expect(a.fillGate.eligibleTightenPlans).toBeGreaterThan(0);
+  });
+
+  it("does not tighten when one order never misses, however cheap tightening looks", () => {
+    // The same tail under a 50 bps cap: nothing fails, so there is nothing to make reliable.
+    const a = advise(VOLATILE, order("WIF/USDC", 1_000, 50));
+    expect(a.byMode.SEND_NOW.cost.failureProbability).toBe(0);
+    expect(a.mode).not.toBe("TIGHTEN_AND_RETRY");
+    expect(a.byMode.TIGHTEN_AND_RETRY.eligible).toBe(false);
+    expect(a.byMode.TIGHTEN_AND_RETRY.ineligibleReason).toMatch(/does not materially improve the chance of filling/);
+    // Its predicted cost is lower than sending now: cost alone would have chosen it.
+    expect(a.byMode.TIGHTEN_AND_RETRY.cost.totalBps).toBeLessThan(a.byMode.SEND_NOW.cost.totalBps);
+    expect(a.fillGate.eligibleTightenPlans).toBe(0);
+  });
+
+  it("never offers a tightened plan that leaves the order unfilled more often than one order would", () => {
+    const a = advise(VOLATILE, order("WIF/USDC", 1_000, 20));
+    for (const c of a.candidates.filter((c) => c.mode === "TIGHTEN_AND_RETRY" && c.eligible)) {
+      expect(a.byMode.SEND_NOW.cost.failureProbability - c.cost.failureProbability).toBeGreaterThanOrEqual(
+        DEFAULT_ADVISOR_PARAMS.tightenMinFillGain,
+      );
+    }
+    const worse = a.candidates.filter(
+      (c) => c.mode === "TIGHTEN_AND_RETRY" && c.cost.failureProbability >= a.byMode.SEND_NOW.cost.failureProbability,
+    );
+    expect(worse.length).toBeGreaterThan(0);
+    for (const c of worse) expect(c.eligible).toBe(false);
   });
 
   it("defers, when enabled, if the transient part is elevated against its own norm", () => {

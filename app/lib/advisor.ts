@@ -20,7 +20,15 @@
  *   SPLIT(k, W)             k portions of S/k, evenly over W seconds, each
  *                           with its own fresh quote and the user's cap
  *   TIGHTEN_AND_RETRY(c, R) full size with a tighter cap c, retried up to R
- *                           times if drift beats it
+ *                           times if drift beats it. A fill-reliability
+ *                           mechanism: a plan is only eligible when it
+ *                           materially cuts the predicted chance of ending
+ *                           unfilled against one order at the user's cap
+ *                           (tightenMinFillGain, tightenMaxFailureShare).
+ *                           Winning or tying on cost is not enough: its cost
+ *                           edge comes from execution drift conditional on
+ *                           filling, which a rejected attempt does not
+ *                           actually avoid.
  *   DEFER                   when the TRANSIENT part of the cheapest plan is
  *                           elevated against its own norm. Waiting does not
  *                           fix depth, so structural cost never triggers it.
@@ -89,6 +97,14 @@ export type AdvisorParams = {
   /** Tighter caps as fractions of the user's cap. */
   tightenFractions: number[];
   retryCounts: number[];
+  /**
+   * A TIGHTEN_AND_RETRY plan is eligible only if it lowers the predicted
+   * probability of ending unfilled, against SEND_NOW at the user's cap, by
+   * at least this much (absolute)...
+   */
+  tightenMinFillGain: number;
+  /** ...and to at most this share of SEND_NOW's. */
+  tightenMaxFailureShare: number;
 };
 
 export const DEFAULT_ADVISOR_PARAMS: AdvisorParams = {
@@ -107,6 +123,8 @@ export const DEFAULT_ADVISOR_PARAMS: AdvisorParams = {
   splitWindowsSeconds: [30, 60, 120, 300, 600, 900],
   tightenFractions: [0.25, 0.5, 0.75],
   retryCounts: [2, 3],
+  tightenMinFillGain: 0.01,
+  tightenMaxFailureShare: 0.5,
 };
 
 export type AdviceInput = {
@@ -140,13 +158,19 @@ export type Candidate = {
   cost: CostBreakdown;
   coverage: Coverage;
   lowConfidence: boolean;
+  /** Whether the advisor may choose it. Only TIGHTEN_AND_RETRY plans can be ineligible. */
+  eligible: boolean;
+  ineligibleReason: string | null;
 };
 
 export type Advice = {
   mode: Mode;
   /** The cheapest executable plan. When mode is DEFER, the plan being deferred. */
   best: Candidate;
-  /** The cheapest configuration of every mode family, chosen or not. */
+  /**
+   * The cheapest configuration of every mode family, chosen or not: the
+   * cheapest eligible one, else the cheapest (marked ineligible).
+   */
   byMode: Record<Exclude<Mode, "DEFER">, Candidate>;
   /** Every configuration evaluated, for the evaluation and the UI. */
   candidates: Candidate[];
@@ -159,6 +183,13 @@ export type Advice = {
     normalVolatility: number | null;
     elevated: boolean;
     note: string;
+  };
+  /** The fill-reliability gate on TIGHTEN_AND_RETRY. */
+  fillGate: {
+    sendNowFailureProbability: number;
+    minFillGain: number;
+    maxFailureShare: number;
+    eligibleTightenPlans: number;
   };
   /** Share of the best plan's cost that is structural. */
   structuralShare: number;
@@ -287,8 +318,8 @@ export function priceCandidates(
 
   const impactAt = (usd: number) => predictImpact(model, pair, usd).value;
   const candidates: Candidate[] = [];
-  const push = (mode: Candidate["mode"], p: CandidateParams, cost: CostBreakdown, coverage: Coverage) =>
-    candidates.push({ mode, params: p, cost, coverage, lowConfidence: coverage !== "ok" });
+  const push = (mode: Candidate["mode"], p: CandidateParams, cost: CostBreakdown, coverage: Coverage, ineligibleReason: string | null = null) =>
+    candidates.push({ mode, params: p, cost, coverage, lowConfidence: coverage !== "ok", eligible: ineligibleReason === null, ineligibleReason });
 
   // SEND_NOW
   {
@@ -327,16 +358,24 @@ export function priceCandidates(
     }
   }
 
-  // TIGHTEN_AND_RETRY(c, R)
+  // TIGHTEN_AND_RETRY(c, R), gated on fill reliability against SEND_NOW.
   {
     const impact = predictImpact(model, pair, notionalUsd);
     const retryWait = waiting(L);
+    const sendNowFailure = exec(capBps).failure;
     for (const fraction of params.tightenFractions) {
       const cap = capBps * fraction;
       const e = exec(cap);
       for (const R of params.retryCounts) {
         const pFail = e.failure;
         const attempts = pFail >= 1 ? R : (1 - Math.pow(pFail, R)) / (1 - pFail);
+        const unfilled = Math.pow(pFail, R);
+        const material =
+          sendNowFailure - unfilled >= params.tightenMinFillGain &&
+          unfilled <= params.tightenMaxFailureShare * sendNowFailure;
+        const ineligibleReason = material
+          ? null
+          : `does not materially improve the chance of filling: ${(100 * unfilled).toFixed(2)}% unfilled against ${(100 * sendNowFailure).toFixed(2)}% for one order at the cap`;
         push(
           "TIGHTEN_AND_RETRY",
           { capBps: cap, retries: R },
@@ -344,11 +383,12 @@ export function priceCandidates(
             impactBps: impact.value,
             executionDriftBps: e.drift,
             waitingDriftBps: (attempts - 1) * retryWait.value,
-            failureProbability: Math.pow(pFail, R),
+            failureProbability: unfilled,
             failurePenaltyBps: phi,
             feeBps: attempts * feeBps,
           }),
           worst(impact.coverage, e.coverage, retryWait.coverage, retry.coverage),
+          ineligibleReason,
         );
       }
     }
@@ -357,10 +397,12 @@ export function priceCandidates(
   return candidates;
 }
 
+/** The cheapest eligible configuration of a mode, else the cheapest (ineligible) one. */
 function cheapestOf(candidates: Candidate[], mode: Candidate["mode"]): Candidate {
   const of = candidates.filter((c) => c.mode === mode);
   if (!of.length) throw new Error(`no ${mode} configuration is allowed by the advisor parameters`);
-  return of.reduce((a, b) => (b.cost.totalBps < a.cost.totalBps ? b : a));
+  const pool = of.some((c) => c.eligible) ? of.filter((c) => c.eligible) : of;
+  return pool.reduce((a, b) => (b.cost.totalBps < a.cost.totalBps ? b : a));
 }
 
 /** The pair's normal volatility: the caller's, else the model's typical value for the pair or its depth class. */
@@ -378,7 +420,9 @@ export function advise(model: CostModel, input: AdviceInput, params: AdvisorPara
     SPLIT: cheapestOf(candidates, "SPLIT"),
     TIGHTEN_AND_RETRY: cheapestOf(candidates, "TIGHTEN_AND_RETRY"),
   };
-  const best = Object.values(byMode).reduce((a, b) => (b.cost.totalBps < a.cost.totalBps ? b : a));
+  const best = Object.values(byMode)
+    .filter((c) => c.eligible)
+    .reduce((a, b) => (b.cost.totalBps < a.cost.totalBps ? b : a));
 
   // Waiting drift only grows with W, so the best window for any k is always
   // the shortest the interval rule allows; W at its minimum is structural.
@@ -447,6 +491,12 @@ export function advise(model: CostModel, input: AdviceInput, params: AdvisorPara
     candidates,
     splitAtGridBoundary,
     transient,
+    fillGate: {
+      sendNowFailureProbability: byMode.SEND_NOW.cost.failureProbability,
+      minFillGain: params.tightenMinFillGain,
+      maxFailureShare: params.tightenMaxFailureShare,
+      eligibleTightenPlans: candidates.filter((c) => c.mode === "TIGHTEN_AND_RETRY" && c.eligible).length,
+    },
     structuralShare,
     costCheck,
     explanation,

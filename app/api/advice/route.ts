@@ -59,6 +59,8 @@ export async function GET(req: Request) {
     feeBps: c.cost.feeBps,
     coverage: c.coverage,
     lowConfidence: c.lowConfidence,
+    eligible: c.eligible,
+    ineligibleReason: c.ineligibleReason,
   });
 
   return NextResponse.json({
@@ -69,6 +71,7 @@ export async function GET(req: Request) {
     mode: advice.mode,
     best: summarise(advice.best),
     alternatives: Object.values(advice.byMode).map(summarise),
+    fillGate: advice.fillGate,
     structuralShare: advice.structuralShare,
     explanation: advice.explanation,
     splitAtGridBoundary: advice.splitAtGridBoundary,

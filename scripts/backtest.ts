@@ -284,13 +284,29 @@ function makeWorld(origin: Ladder, ladders: Ladder[], driftPath: DriftPath, late
     return { bps, failed: failedPortions > 0, fees: k + failedPortions, approximate };
   };
 
+  // Each attempt is a fresh quote at the start of the next RECORDED window of
+  // the drift path (0-5 s, then 5-15 s, then 15-30 s) and fills if the
+  // recorded move over that window stays within the tightened cap. A rejected
+  // attempt's move is still paid: the retry starts from the moved price.
+  // Later windows are longer than one latency, which overstates retry drift.
+  // A window the path did not record is not invented: the order stops
+  // retrying there, is completed at the next ladder, and is flagged
+  // approximate. (Interpolating the path made attempts 2 and 3 identical
+  // halves of the 5-15 s move.)
   const tighten = (cap: number, retries: number): Realised => {
+    const pts = driftPath.points;
+    let attempts = 0;
     for (let i = 0; i < retries; i++) {
-      const t = i * latency;
-      const e = execAt(t);
-      if (e <= cap) return { bps: curveAt(origin)(notional) + pathAt(t) + e + (i + 1) * feeBps, failed: false, fees: i + 1, approximate };
+      if (i + 1 >= pts.length) {
+        approximate = true;
+        break;
+      }
+      attempts += 1;
+      const [, start] = pts[i];
+      const [, end] = pts[i + 1];
+      if (end - start <= cap) return { bps: curveAt(origin)(notional) + end + attempts * feeBps, failed: false, fees: attempts, approximate };
     }
-    return { bps: retries * feeBps + completion(notional), failed: true, fees: retries + 1, approximate };
+    return { bps: attempts * feeBps + completion(notional), failed: true, fees: attempts + 1, approximate };
   };
 
   const realise = (c: Candidate, cap: number, rho: number): Realised => {
@@ -809,7 +825,8 @@ function report(meta: { modelVersion: string; producer: string; exampleOnly: boo
   L.push("## Limitations", "");
   L.push(
     "- Recovery rho is unmeasured: the sampler never trades, so no recorded quote reflects our own fills.",
-    "- TIGHTEN_AND_RETRY retries are priced on recorded 5->15 s and 15->30 s moves: retry gaps of 10-15 s rather than 5 s, overstating retry drift.",
+    "- TIGHTEN_AND_RETRY attempts use the drift path's recorded windows (0-5 s, 5-15 s, 15-30 s), so retries take 10-15 s rather than 5 s, which overstates retry drift. A window the path did not record ends the retries (flagged approximate).",
+    "- Between recorded points the backtest interpolates: impact linearly in log-notional between a ladder's rungs (for split portions and completions), and drift linearly between the +5/15/30/60 s re-quotes (for split portions). Retries and single orders use recorded points only.",
     "- Drift beyond 60 s uses ladder-to-ladder rung-1 price changes, ladders every 90-120 s: coarse.",
     "- Orders are synthetic (one per recorded rung size on ladders with a recorded +5 s re-quote); every realised cost is read from recorded quotes.",
     "- A failed fill is completed at the pair's next recorded ladder (1-10 min later), paying the recorded waiting drift and that ladder's impact, so every strategy ends filled. Failed split portions are completed on top of the displacement our filled portions left, decayed one further rho step (exact at rho = 0 and 1, conservative between). Failure rates are reported separately.",

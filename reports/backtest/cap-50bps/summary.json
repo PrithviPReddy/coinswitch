@@ -10,7 +10,7 @@
     "to": "2026-10-16T14:24:15.130Z",
     "orders": 2177
   },
-  "generatedAt": "2026-10-16T14:31:12.988Z",
+  "generatedAt": "2026-10-16T16:56:40.530Z",
   "advisorParams": {
     "latencySeconds": 5,
     "feeUsd": 0.002,
@@ -49,7 +49,9 @@
     "retryCounts": [
       2,
       3
-    ]
+    ],
+    "tightenMinFillGain": 0.01,
+    "tightenMaxFailureShare": 0.5
   },
   "cap": 50,
   "byDepthRho": {

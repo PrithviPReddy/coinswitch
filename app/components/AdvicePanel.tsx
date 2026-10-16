@@ -16,6 +16,8 @@ type Plan = {
   feeBps: number;
   coverage: string;
   lowConfidence: boolean;
+  eligible: boolean;
+  ineligibleReason: string | null;
 };
 
 type Advice = {
@@ -150,6 +152,17 @@ export default function AdvicePanel({
         <tbody>
           {advice.alternatives.map((p) => {
             const d = describe(p);
+            if (!p.eligible) {
+              return (
+                <tr key={p.mode} className="text-ink-faint">
+                  <td className="py-0.5 pr-2" />
+                  <td className="py-0.5">{d.title}</td>
+                  <td colSpan={4} title={p.ineligibleReason ?? undefined} className="py-0.5 text-right">
+                    not offered: it would not make a fill materially more likely
+                  </td>
+                </tr>
+              );
+            }
             return (
               <tr key={p.mode} className={sameAsBest(p) ? "text-ink" : "text-ink-faint"}>
                 <td className="py-0.5 pr-2">{sameAsBest(p) ? "▸" : ""}</td>
