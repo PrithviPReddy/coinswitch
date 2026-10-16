@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
   SUPPORTED_TOKENS,
+  tokenLabel,
   SupportedToken,
   DEFAULT_SLIPPAGE_BPS,
 } from "../lib/constants";
@@ -116,6 +117,11 @@ export default function SwapPanel({
       <p className="mt-2 text-sm text-ink-soft">
         Quoted on mainnet through Jupiter. Settled on devnet against the
         project vault.
+      </p>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+        USDC, USDT, JUP, BONK and WIF here are devnet stand-ins this project
+        mints, priced from real mainnet quotes. No real tokens move. The vault
+        holds little devnet SOL, so make large trades token to token.
       </p>
 
       <div className="panel mt-6 p-6">
@@ -289,7 +295,7 @@ function AmountRow({
         >
           {SUPPORTED_TOKENS.filter((t) => t.mint !== exclude.mint).map((t) => (
             <option key={t.mint} value={t.mint}>
-              {t.name}
+              {tokenLabel(t)}
             </option>
           ))}
         </select>

@@ -38,15 +38,27 @@ export interface TokenDetails {
   decimals: number;
   /** The environment variable devnetMint comes from, for error messages. */
   devnetMintEnv?: string;
+  /**
+   * "thin" for the mid-caps whose mainnet liquidity is a few million dollars,
+   * where size costs real money; "deep" for SOL and the stablecoins.
+   */
+  depth: "deep" | "thin";
 }
 
 /**
  * Devnet mint addresses are created by `npm run setup:devnet` and written into
  * the environment. A missing or malformed one is reported by name at first
  * use (requireDevnetMint in devnet.ts), not as a bare key-parsing error.
+ *
+ * Every token except SOL is a devnet stand-in this project mints itself. The
+ * mainnet mint beside it is only ever used to ask Jupiter for a price; no
+ * real USDC, JUP, BONK or WIF is ever touched.
  */
 const DEVNET_USDC_MINT = process.env.DEVNET_USDC_MINT ?? "";
 const DEVNET_USDT_MINT = process.env.DEVNET_USDT_MINT ?? "";
+const DEVNET_JUP_MINT = process.env.DEVNET_JUP_MINT ?? "";
+const DEVNET_BONK_MINT = process.env.DEVNET_BONK_MINT ?? "";
+const DEVNET_WIF_MINT = process.env.DEVNET_WIF_MINT ?? "";
 
 export const SUPPORTED_TOKENS: TokenDetails[] = [
   {
@@ -57,6 +69,7 @@ export const SUPPORTED_TOKENS: TokenDetails[] = [
     native: false,
     image: "/tokens/USDC.png",
     decimals: 6,
+    depth: "deep",
   },
   {
     name: "USDT",
@@ -66,6 +79,7 @@ export const SUPPORTED_TOKENS: TokenDetails[] = [
     native: false,
     image: "/tokens/USDT.png",
     decimals: 6,
+    depth: "deep",
   },
   {
     name: "SOL",
@@ -74,8 +88,46 @@ export const SUPPORTED_TOKENS: TokenDetails[] = [
     native: true,
     image: "/tokens/Sol.png",
     decimals: 9,
+    depth: "deep",
+  },
+  // Decimals match the mainnet mints (read on chain, 2026-10-16), so a
+  // mainnet quote's base units settle on devnet unchanged.
+  {
+    name: "JUP",
+    mint: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+    devnetMint: DEVNET_JUP_MINT,
+    devnetMintEnv: "DEVNET_JUP_MINT",
+    native: false,
+    image: "/tokens/default.svg",
+    decimals: 6,
+    depth: "thin",
+  },
+  {
+    name: "BONK",
+    mint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+    devnetMint: DEVNET_BONK_MINT,
+    devnetMintEnv: "DEVNET_BONK_MINT",
+    native: false,
+    image: "/tokens/default.svg",
+    decimals: 5,
+    depth: "thin",
+  },
+  {
+    name: "WIF",
+    mint: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    devnetMint: DEVNET_WIF_MINT,
+    devnetMintEnv: "DEVNET_WIF_MINT",
+    native: false,
+    image: "/tokens/default.svg",
+    decimals: 6,
+    depth: "thin",
   },
 ];
+
+/** What a selector should call a token, so nobody mistakes a stand-in for the real thing. */
+export function tokenLabel(token: TokenDetails): string {
+  return token.native ? `${token.name} (devnet)` : `${token.name} (devnet stand-in)`;
+}
 
 export type SupportedToken = TokenDetails;
 

@@ -3,7 +3,7 @@ import db from "@/app/db";
 import { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 import { authConfig } from "@/app/lib/auth";
-import { SUPPORTED_TOKENS } from "@/app/lib/constants";
+import { getSupportedTokens } from "@/app/lib/constants";
 import { SettlementUncertainError, fundWallet } from "@/app/lib/devnet";
 import { resolveWallet } from "@/app/lib/wallets";
 import type { session as AppSession } from "@/app/lib/auth";
@@ -64,7 +64,8 @@ export async function POST(req: NextRequest) {
   try {
     const signatures = await fundWallet(
       new PublicKey(solWallet.publicKey),
-      SUPPORTED_TOKENS,
+      // With mainnet prices attached: top-ups are sized in USD.
+      await getSupportedTokens(),
     );
 
     return NextResponse.json({ signatures });

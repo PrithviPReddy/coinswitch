@@ -158,6 +158,9 @@ export default function Terminal({
                       className="rounded-full"
                     />
                     <span className="text-sm text-ink">{token.name}</span>
+                    {!token.native && (
+                      <span className="text-[11px] text-ink-faint">stand-in</span>
+                    )}
                   </span>
                   <span className="figure text-sm text-ink">
                     {balanceOf(token).toFixed(4)}

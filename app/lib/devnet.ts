@@ -342,6 +342,19 @@ export async function settleSwap({
     "this swap",
   );
 
+  // A token payout comes out of the vault's own stock. Say so plainly when
+  // that has run low, instead of letting the transfer fail in preflight.
+  if (!outputToken.native) {
+    const held = await readBalance(outputToken, vault.publicKey);
+    if (held < outBaseUnits) {
+      throw new SettlementNotAppliedError(
+        `The vault holds ${fromBaseUnits(held, outputToken.decimals)} ${outputToken.name} and this ` +
+          `swap pays out ${fromBaseUnits(outBaseUnits, outputToken.decimals)}. Run ` +
+          "`npm run setup:devnet` to restock it.",
+      );
+    }
+  }
+
   const instructions: TransactionInstruction[] = [];
 
   // Leg one: user pays the vault.
@@ -438,9 +451,36 @@ async function assertVaultAboveFloor(vault: PublicKey, topUp: bigint) {
 }
 
 /**
- * Tops a wallet up so it can trade: SOL from the vault plus a fixed allowance
- * of each project mint, all in one transaction so the whole top-up is a single
- * confirmation rather than one per token.
+ * USD value of each project token a top-up mints. Sized by notional because
+ * unit counts mean nothing across tokens (500 BONK is about a cent), and big
+ * enough that one top-up covers a $200k demo trade.
+ */
+export const FUND_TOKEN_USD = Number(process.env.FUND_TOKEN_USD || 250_000);
+
+const STABLECOINS = new Set(["USDC", "USDT"]);
+
+/**
+ * How many base units of `token` are worth `usd` at its mainnet price.
+ * Stablecoins fall back to $1 when no price is available; anything else
+ * refuses rather than guessing a size.
+ */
+export function unitsForUsd(token: TokenDetails, usd: number): bigint {
+  const price = token.price && token.price > 0 ? token.price : STABLECOINS.has(token.name) ? 1 : 0;
+  if (!(price > 0)) {
+    throw new Error(
+      `No mainnet price for ${token.name} right now, so the top-up cannot be sized. Try again in a minute.`,
+    );
+  }
+  return toBaseUnits(usd / price, token.decimals);
+}
+
+/**
+ * Tops a wallet up so it can trade: a little SOL from the vault, plus
+ * FUND_TOKEN_USD worth of each project token minted fresh, all in one
+ * transaction so the whole top-up is a single confirmation.
+ *
+ * `tokens` must carry mainnet prices (getSupportedTokens), which size the
+ * mints.
  */
 export async function fundWallet(
   owner: PublicKey,
@@ -477,7 +517,7 @@ export async function fundWallet(
         mint,
         ata,
         vault.publicKey,
-        toBaseUnits(500, token.decimals),
+        unitsForUsd(token, FUND_TOKEN_USD),
       ),
     );
   }

@@ -136,6 +136,32 @@ unit tests.
   in total. `npm run lint` was failing on Prisma's generated client and now
   ignores it.
 
+### P1.5 — thin tokens in the app (2026-10-16)
+- Devnet stand-in mints for JUP (6 dp), BONK (5 dp) and WIF (6 dp), with
+  decimals copied from the mainnet mints (G.1). Added to `SUPPORTED_TOKENS`
+  (mainnet mint for quoting, devnet mint for settlement) and wired through
+  `.env`, `.env.example` and compose.
+- **Sized by USD notional:** `setup:devnet` keeps about $5M of each token in
+  the vault (`VAULT_STOCK_USD`), restocking below half. "Fund from vault"
+  mints $250k of each project token (`FUND_TOKEN_USD`) at mainnet prices.
+  Stablecoins fall back to $1; thin tokens refuse to be sized without a
+  price. Swaps check vault stock before signing.
+- **UI:** selectors read "BONK (devnet stand-in)", balances are tagged
+  stand-in, and the swap panel says these are project-minted stand-ins
+  priced from mainnet quotes and that no real tokens move. Large trades
+  should be token to token, because the vault's SOL is faucet-limited.
+- **Live on devnet:** a top-up landed $250,000 of each thin token. A
+  $200k BONK→USDC swap delivered $145,089 USDC (Bonkswap > BisonFi > Raydium
+  CLMM > Meteora DLMM). A $200k USDC→WIF swap had the vault pay 926,504 WIF.
+- **Found and fixed:** `setup:devnet` used spl-token helpers that confirm
+  over a WebSocket, which Alchemy doesn't implement. The JUP mint landed while
+  the script reported "expired". The script now confirms over HTTP, records
+  each new mint's address as pending before sending (a re-run adopts it), and
+  adopted the JUP mint that landed, so no orphan was left. It also no longer
+  prints the RPC URL, which carries the Alchemy key.
+- Rate-limit contention is visible: the sampler logged 16 real 429s during
+  this phase's live testing. All recovered; 1 request in 3,313 failed.
+
 ## In progress
 
 - **Sampler v2 running in Docker** since 2026-10-16 08:29:15 UTC.
