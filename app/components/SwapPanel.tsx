@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import axios from "axios";
 import {
   SUPPORTED_TOKENS,
@@ -10,6 +11,7 @@ import {
 } from "../lib/constants";
 import { useJupiterQuote } from "../hooks/useJupiterQuote";
 import TxReceipt from "./TxReceipt";
+import AdvicePanel from "./AdvicePanel";
 
 type Receipt = {
   id: string;
@@ -50,10 +52,13 @@ export default function SwapPanel({
   walletId,
   balanceOf,
   onBalancesChanged,
+  ledgerSlot = null,
 }: {
   walletId: string;
   balanceOf: (token: SupportedToken) => number;
   onBalancesChanged: () => Promise<void> | void;
+  /** Where to render the settlement log; inline when not given. */
+  ledgerSlot?: HTMLElement | null;
 }) {
   const [baseAsset, setBaseAsset] = useState<SupportedToken>(
     SUPPORTED_TOKENS[2],
@@ -203,6 +208,15 @@ export default function SwapPanel({
           </dl>
         )}
 
+        {quote && (
+          <AdvicePanel
+            baseAsset={baseAsset}
+            quoteAsset={quoteAsset}
+            inAmountBaseUnits={quote.inAmountBaseUnits}
+            quotedImpactBps={quote.priceImpactPct === null ? null : quote.priceImpactPct * 10_000}
+          />
+        )}
+
         {error && <p className="mt-5 text-sm text-flag">{error}</p>}
         {insufficient && (
           <p className="mt-5 text-sm text-flag">
@@ -260,7 +274,7 @@ export default function SwapPanel({
         />
       )}
 
-      <Ledger rows={ledger} />
+      {ledgerSlot ? createPortal(<Ledger rows={ledger} />, ledgerSlot) : <Ledger rows={ledger} />}
     </>
   );
 }
@@ -353,34 +367,43 @@ function Ledger({ rows }: { rows: LedgerRow[] }) {
       <h2 className="text-xl text-ink">Settlement log</h2>
 
       <div className="panel mt-5 overflow-x-auto">
-        <table className="w-full text-left text-sm">
+        <table className="w-full whitespace-nowrap text-left text-sm">
           <thead>
             <tr className="border-b border-rule text-xs text-ink-faint">
-              <th className="px-5 py-3 font-normal">Time</th>
-              <th className="px-5 py-3 font-normal">Pair</th>
-              <th className="px-5 py-3 text-right font-normal">Paid</th>
-              <th className="px-5 py-3 text-right font-normal">Quoted</th>
-              <th className="px-5 py-3 text-right font-normal">Delivered</th>
-              <th className="px-5 py-3 font-normal">Signature</th>
+              <th className="px-3 py-3 font-normal">Time</th>
+              <th className="px-3 py-3 font-normal">Pair</th>
+              <th className="px-3 py-3 font-normal">Status</th>
+              <th className="px-3 py-3 text-right font-normal">Paid</th>
+              <th className="px-3 py-3 text-right font-normal">Quoted</th>
+              <th className="px-3 py-3 text-right font-normal">Delivered</th>
+              <th className="px-3 py-3 text-right font-normal">Impact</th>
+              <th className="px-3 py-3 text-right font-normal">Cap</th>
+              <th className="px-3 py-3 font-normal">Signature</th>
             </tr>
           </thead>
 
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="border-b border-rule last:border-0">
-                <td className="figure px-5 py-3.5 text-xs text-ink-soft">
+                <td className="figure px-3 py-3.5 text-xs text-ink-soft">
                   {new Date(row.createdAt).toLocaleTimeString()}
                 </td>
-                <td className="px-5 py-3.5 text-ink">
+                <td className="px-3 py-3.5 text-ink">
                   {row.inputSymbol}/{row.outputSymbol}
                 </td>
-                <td className="figure px-5 py-3.5 text-right text-ink">
+                <td
+                  title={row.failureReason ?? undefined}
+                  className={`px-3 py-3.5 text-xs ${row.status === "Failed" ? "text-flag" : row.status === "Pending" ? "text-ink-soft" : "text-ink"}`}
+                >
+                  {row.status.toLowerCase()}
+                </td>
+                <td className="figure px-3 py-3.5 text-right text-ink">
                   {row.inAmount}
                 </td>
-                <td className="figure px-5 py-3.5 text-right text-ink-soft">
+                <td className="figure px-3 py-3.5 text-right text-ink-soft">
                   {row.quotedOut}
                 </td>
-                <td className="figure px-5 py-3.5 text-right text-ink">
+                <td className="figure px-3 py-3.5 text-right text-ink">
                   {row.settledOut ?? "—"}
                   {row.fillMode === "simulated" && (
                     <span
@@ -391,7 +414,13 @@ function Ledger({ rows }: { rows: LedgerRow[] }) {
                     </span>
                   )}
                 </td>
-                <td className="px-5 py-3.5">
+                <td className="figure px-3 py-3.5 text-right text-xs text-ink-soft">
+                  {row.priceImpactPct === null ? "—" : `${(row.priceImpactPct * 100).toFixed(2)}%`}
+                </td>
+                <td className="figure px-3 py-3.5 text-right text-xs text-ink-soft">
+                  {row.slippageBps} bps
+                </td>
+                <td className="px-3 py-3.5">
                   {row.explorerUrl ? (
                     <a
                       href={row.explorerUrl}
@@ -399,12 +428,10 @@ function Ledger({ rows }: { rows: LedgerRow[] }) {
                       rel="noreferrer"
                       className="figure text-xs text-emerald underline decoration-emerald/30 underline-offset-4"
                     >
-                      {row.signature?.slice(0, 12)}…
+                      {row.signature?.slice(0, 8)}…
                     </a>
                   ) : (
-                    <span className="text-xs text-flag">
-                      {row.status === "Failed" ? "failed" : "pending"}
-                    </span>
+                    <span className="text-xs text-ink-faint">none</span>
                   )}
                 </td>
               </tr>

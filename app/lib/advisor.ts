@@ -24,6 +24,11 @@
  *   DEFER                   when the TRANSIENT part of the cheapest plan is
  *                           elevated against its own norm. Waiting does not
  *                           fix depth, so structural cost never triggers it.
+ *                           OFF by default: on held-out data the gain from
+ *                           deferring is indistinguishable from zero, and its
+ *                           sign changed between runs (reports/backtest).
+ *                           The test is still computed and reported on every
+ *                           advice.
  *
  * Pool recovery between split portions is unmeasured (the sampler never
  * trades, so no recorded quote reflects our own fills). It is a parameter,
@@ -31,7 +36,10 @@
  * has decayed before the next portion lands. rho = 1 is full recovery (each
  * portion pays impact at its own size, the optimistic bound); rho = 0 is none
  * (the portions together pay exactly what one order would). See
- * splitImpactBps.
+ * splitImpactBps. The default is rho = 1, on the backtest's regret analysis:
+ * assuming 1 when the truth is 0 costs about the extra fees and waiting drift
+ * (a median of ~1 bps on thin orders of $10k+), while assuming 0 when the
+ * truth is 1 forgoes the whole split saving (a median of ~168 bps).
  *
  * Other assumptions: portions and retries see independent drift; a failed
  * attempt pays its fee, as a reverted transaction does on mainnet.
@@ -61,6 +69,11 @@ export type AdvisorParams = {
   recoveryFraction: number;
   /** The shortest gap allowed between split portions, seconds. */
   minPortionIntervalSeconds: number;
+  /**
+   * Whether DEFER may be chosen. Off by default: the held-out backtest found
+   * it does not help (volatility does not predict short-horizon drift).
+   */
+  deferEnabled: boolean;
   /** DEFER when transient cost is at least this multiple of its norm... */
   deferTransientRatio: number;
   /** ...and at least this many bps above it. */
@@ -84,6 +97,7 @@ export const DEFAULT_ADVISOR_PARAMS: AdvisorParams = {
   retryIntervalSeconds: 5,
   recoveryFraction: 1,
   minPortionIntervalSeconds: 10,
+  deferEnabled: false,
   deferTransientRatio: 2,
   deferMinExcessBps: 1,
   normalVolatility: null,
@@ -419,14 +433,15 @@ export function advise(model: CostModel, input: AdviceInput, params: AdvisorPara
                 : `this costs ${best.cost.totalBps.toFixed(1)} bps, over your maximum of ${params.maxCostBps} bps; most of it is transient, so waiting may help.`,
         };
 
-  const explanation = transient.elevated
+  const defer = params.deferEnabled && transient.elevated;
+  const explanation = defer
     ? `DEFER: ${transient.note}.`
     : structural
       ? `${best.mode}: ${(100 * structuralShare).toFixed(0)}% of the predicted ${best.cost.totalBps.toFixed(1)} bps is impact and fees. This cost is structural — waiting will not help.`
-      : `${best.mode}: predicted ${best.cost.totalBps.toFixed(1)} bps, ${(100 * structuralShare).toFixed(0)}% structural.`;
+      : `${best.mode}: predicted ${best.cost.totalBps.toFixed(1)} bps, of which ${(100 * structuralShare).toFixed(0)}% is impact and fees and the rest price drift and the chance of missing the cap.`;
 
   return {
-    mode: transient.elevated ? "DEFER" : best.mode,
+    mode: defer ? "DEFER" : best.mode,
     best,
     byMode,
     candidates,

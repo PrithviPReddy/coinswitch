@@ -37,6 +37,9 @@ export default function Terminal({
   const [tab, setTab] = useState<Tab>("swap");
   const [funding, setFunding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // A full-width row under the grid, where the swap panel puts its
+  // settlement log; the log has more columns than the swap column fits.
+  const [ledgerSlot, setLedgerSlot] = useState<HTMLDivElement | null>(null);
 
   const publicKey = selected?.publicKey ?? "";
   const walletId = selected?.id ?? "";
@@ -104,6 +107,7 @@ export default function Terminal({
               walletId={walletId}
               balanceOf={balanceOf}
               onBalancesChanged={refresh}
+              ledgerSlot={ledgerSlot}
             />
           ) : (
             <SendPanel
@@ -171,6 +175,8 @@ export default function Terminal({
           </div>
         </aside>
       </div>
+
+      <div ref={setLedgerSlot} />
     </main>
   );
 }

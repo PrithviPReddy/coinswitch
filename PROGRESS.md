@@ -7,8 +7,8 @@ Sprint plan: P0 sampler → P1 integrity fixes → P2 simulated fill → P3 pred
 
 | Table | Rows | First row | Counted at |
 |---|---|---|---|
-| QuoteSample | 8,274 | 2026-10-16 04:04 UTC | 2026-10-16 11:03 UTC |
-| QuoteDrift | 2,185 | 2026-10-16 04:23 UTC | 2026-10-16 11:03 UTC |
+| QuoteSample | 13,700 (deep 9,247, thin 4,453) | 2026-10-16 04:04 UTC | 2026-10-16 14:25 UTC |
+| QuoteDrift | 3,439 (deep 2,468, thin 971) | 2026-10-16 04:23 UTC | 2026-10-16 14:25 UTC |
 
 v2 (thin pairs, 9 rungs, `notionalSource = 'price_v3'`) began at
 2026-10-16 08:29:15 UTC.
@@ -318,6 +318,10 @@ unit tests.
   predictions and the backtest's recorded outcomes. 27 advisor tests.
 
 ### P5 — backtest (2026-10-16, against the EXAMPLE artifact)
+
+(The numbers in this section are the first run. They are superseded by
+"P5 additions" below, which corrects two accounting errors.)
+
 - `npm run backtest [model]` writes `reports/backtest/`: `orders.csv`,
   `summary.json`, `summary.md` and charts (SVG, plus PNG via Quick Look).
 - **Setup:**
@@ -355,18 +359,116 @@ unit tests.
 - README: the cost-model findings (drift written as a finding), the advisor
   decomposition, and the ρ statement, including how ρ could be measured.
 
+### P5 additions (2026-10-16, after review)
+- **Regret 2×2** (the advisor assumes ρ = 1 or 0, the pool has ρ = 1 or 0).
+  Thin pairs, orders of ~$10k and up, n = 620, cap 50, median saved bps
+  vs always-SEND_NOW:
+  - assume 1, true 1: **+168.4** (mean +1,489)
+  - assume 1, true 0: **−1.0** (mean −2.4, worst 5% −74.1)
+  - assume 0, true 1 and assume 0, true 0: 0
+  - Cap 5 is the same shape: +167.8 / −1.2 (mean −3.2, worst 5% −76.5).
+  - **The asymmetry holds, so the shipped advisor assumes ρ = 1.** The
+    downside is bounded by fees plus waiting drift, because at ρ = 0 the
+    portions pay one order's impact. The ρ = 0 bound ignores extraction
+    against visible portions, so it is the least a wrong ρ = 1 costs.
+- **DEFER off by default** (`deferEnabled: false`). The transient /
+  structural split and the "this cost is structural — waiting will not
+  help" message stay. Run as an experiment:
+  - cap 50: 161 thin deferrals, 74 cheaper, 61 dearer, mean +1.4 bps,
+    95% CI −7.7 to +7.1 (block bootstrap, 8 blocks), median 0
+  - cap 5: 172 deferrals, mean +1.4, CI −8.1 to +7.6
+  - The first run gave −2.0. The sign moves with the data and the interval
+    spans zero: **not supported**.
+- **Tight-cap run at 5 bps** alongside 50 bps, written to
+  `reports/backtest/cap-50bps/` and `cap-5bps/`, with one README covering
+  both.
+  - Failure rate ctl / advisor / fixed split: deep 4% / 4% / 5%; thin
+    ρ = 1 6% / 16% / 9%; thin ρ = 0 6% / 5% / 9%. At cap 50 it is 0
+    everywhere.
+  - TIGHTEN_AND_RETRY is chosen for 1,092 of 1,092 deep orders and 233 of
+    1,085 thin ones at cap 5, never at cap 50.
+  - **It does not beat the control:** deep mean +0.13 bps (CI −0.35 to
+    +0.49), 162 better and 166 worse; thin −0.48 (CI −0.96 to +0.03).
+- **Accounting corrections:**
+  1. Failed fills were counted as savings. Every failure is now completed
+     at the pair's next ladder (fee, waiting drift and that ladder's
+     impact).
+  2. Failed split portions were completed on a fresh pool, which let them
+     escape the ρ = 0 penalty. That made the cap-5 "assume 1, true 0" mean
+     a spurious +19.7 bps. They are now completed on top of the
+     displacement the filled portions left; the mean is −3.2.
+- **Reproducible runs:** `--until <ISO>` fixes the data. The committed
+  report uses `--until 2026-10-16T14:25:00Z`; two runs are byte-identical.
+- **Coverage-by-cause table:**
+  - Thin is 100% low confidence. 723 of 856 SPLIT plans are
+    `extrapolated` (portions wait beyond the 60 s horizon) and the rest
+    are `fallback` (no thin per-pair +5 s cells before the training
+    cutoff).
+  - Deep is 58%: sparse 262, fallback 360, extrapolated 14.
+- **Deep $1M miss:** the example model predicts ~3 bps of impact at ~$1M
+  on deep pairs, where recorded one-order cost has a median of 7.8–10.7 bps.
+  The advisor never splits there, although splitting would pay for ρ above
+  ~0.35. That is a missed saving, not a loss.
+
+### P6 — UI and docs (2026-10-16)
+- `GET /api/advice` (read only) and `AdvicePanel` under the quote:
+  - the recommended mode, its cost in bps and $, and its breakdown (impact,
+    drift, fees, failure chance)
+  - the predicted cost of every alternative
+  - low-confidence markers, with the cause on hover
+  - the live quote's impact beside the model's
+  - the grid-boundary note
+  - "assumes ρ = 1" and the artifact label (example or Colab)
+  - The model loads once per process and is validated with its test
+    vectors; an artifact that fails is not served.
+- Settlement log: Status (failure reason on hover), Impact and Cap columns.
+  It now renders full width under the grid, through a portal, so every
+  column is visible. The receipt keeps the simulated-fill badge, and the
+  log keeps "sim".
+- Copy:
+  - Sign-in no longer claims the wallet is funded; it starts empty until
+    **Fund from vault**.
+  - Hero "Read it back" now says the balance difference shows what the vault
+    paid, which the app sets, and that it is not a market fill.
+  - "Record the quote" no longer claims the record cannot be revised.
+- Advice explanation reworded ("of which X% is impact and fees…").
+- README rewritten:
+  - architecture; the dataset
+  - reproduction (dataset, fill model, Colab model, backtest)
+  - the regret 2×2 and the ρ = 1 decision
+  - DEFER as tested and not supported; TIGHTEN at 5 bps
+  - both caps' results, labelled; the low-confidence causes
+  - honest limitations; a Future Work section on the event-study method
+    for ρ
+- Verified on the dev server with headless Brave (no new dependency):
+  - SOL → USDC 0.25: SEND_NOW 2.0 bps
+  - BONK → USDC ~$30k: SPLIT 24 × 5 min at 21 bps against 293 sent whole,
+    boundary flagged; live impact 187 bps against 292 predicted
+  - the full-width log
+  - /api/advice rejects bad input with 400s
+
 ## Demo-day checklist (add to it as things come up)
 
 - [ ] `docker compose up --build`: the app image predates P1.
 - [ ] `npm run build:fill-model`, then commit the artifact version used
       (the startup log prints the version and its age, and warns over 12 h).
-- [ ] `npm run validate:model` against the committed cost model.
+- [ ] Put the final Colab `cost-model.json` at `models/cost-model.json` and
+      run `npm run validate:model`. The advice panel must **not** say
+      "example artifact" (the startup log names the model it serves).
+- [ ] Re-run `npm run backtest -- --until <time>` on the Colab model and
+      commit `reports/backtest/`; update the README's result tables.
 - [ ] `npm run sampler:pause`, unless the dedicated key has arrived.
 - [ ] Confirm the vault holds enough of all six tokens for the planned
       trades. `npm run setup:devnet` restocks tokens to about $5M each, but
       SOL only comes from the faucet.
 - [ ] Have one settled thin-pair swap already open in a Solscan tab, as a
       fallback.
+- [ ] Rehearse the advice panel: SOL → USDC small (SEND_NOW), then
+      10,000,000,000 BONK → USDC (~$30k, SPLIT, low confidence, the
+      live-vs-model impact line). Be ready to explain both "low confidence"
+      and "assumes ρ = 1".
+- [ ] If Jupiter rate limits the app ("Wait a moment and retry"), the sampler
+      is still running: pause it.
 - [ ] Afterwards: `npm run sampler:resume`.
 
 ## In progress
@@ -384,12 +486,13 @@ unit tests.
 
 ## Blocked / open
 
-- **Pending swaps never resolve on their own.** A timed-out swap stays
-  Pending, with its signature, until someone checks Solscan. A small
-  reconciliation pass (check the signature, then move to Settled or Failed)
-  is not built yet.
+- **Waiting on the final Colab fit.** Then: validate, both backtest runs,
+  the low-confidence change (thin will likely stay near 100% from the 60 s
+  horizon alone), the regret 2×2 and the recomputed impact table.
 - **The Docker app image predates P1.** `docker compose up --build` picks it
   up. Note that rebuilding also recreates the sampler (a few seconds' gap).
+- (Resolved in P1: Pending swaps are reconciled against devnet when the log
+  loads.)
 
 - See the questions in the P0 report: Jupiter budget (a dedicated key for
   the sampler), drift coverage at +5 s and +15 s, and what to do with the

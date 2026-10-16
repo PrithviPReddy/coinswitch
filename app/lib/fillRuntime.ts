@@ -88,7 +88,7 @@ function sourcePair(artifact: FillArtifact, input: string, output: string): stri
 }
 
 /** Realised volatility for a sampled pair right now, from the sampler's rows. */
-async function currentVolatility(pair: string): Promise<number | null> {
+export async function currentVolatility(pair: string): Promise<number | null> {
   const since = new Date(Date.now() - VOLATILITY.windowMinutes * 60_000);
   const rows = await db.quoteSample.findMany({
     where: { pair, ladderRung: VOLATILITY.rung, sampledAt: { gte: since } },

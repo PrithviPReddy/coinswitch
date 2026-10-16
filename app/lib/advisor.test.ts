@@ -124,8 +124,8 @@ describe("advise: the mode each market calls for", () => {
     expect(a.best.cost.executionDriftBps).toBeLessThan(a.byMode.SEND_NOW.cost.executionDriftBps);
   });
 
-  it("defers when the transient part is elevated against its own norm", () => {
-    const a = advise(REGIME, order("JUP/USDC", 1_000, 50, 10));
+  it("defers, when enabled, if the transient part is elevated against its own norm", () => {
+    const a = advise(REGIME, order("JUP/USDC", 1_000, 50, 10), { ...DEFAULT_ADVISOR_PARAMS, deferEnabled: true });
     expect(a.mode).toBe("DEFER");
     expect(a.transient.elevated).toBe(true);
     expect(a.transient.nowBps).toBeGreaterThanOrEqual(2 * a.transient.normBps);
@@ -133,7 +133,14 @@ describe("advise: the mode each market calls for", () => {
   });
 
   it("does not defer the same order at normal volatility", () => {
-    expect(advise(REGIME, order("JUP/USDC", 1_000, 50, 1)).mode).not.toBe("DEFER");
+    expect(advise(REGIME, order("JUP/USDC", 1_000, 50, 1), { ...DEFAULT_ADVISOR_PARAMS, deferEnabled: true }).mode).not.toBe("DEFER");
+  });
+
+  it("never defers by default, but still reports the transient test", () => {
+    const a = advise(REGIME, order("JUP/USDC", 1_000, 50, 10));
+    expect(DEFAULT_ADVISOR_PARAMS.deferEnabled).toBe(false);
+    expect(a.mode).not.toBe("DEFER");
+    expect(a.transient.elevated).toBe(true);
   });
 
   it("does not judge against a norm it cannot compute", () => {
