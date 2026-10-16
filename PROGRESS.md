@@ -266,6 +266,43 @@ unit tests.
     data size.
   - Failure-probability Brier: deep 0.085 (n=600), thin 0.061 (n=654).
 
+### P4 — advisor (2026-10-16, built while Colab runs)
+- `app/lib/advisor.ts`: pure and deterministic. C(m) = I + X + p·φ + fees,
+  in bps of notional.
+  - **SEND_NOW:** impact at full size, plus execution drift bounded by the
+    cap, plus p·φ, plus one fee.
+  - **SPLIT(k, W):** impact at N/k, plus waiting drift averaged over the
+    portion delays, plus p·φ, plus k fees. Each portion gets a fresh quote
+    and the user's cap.
+  - **TIGHTEN_AND_RETRY(c, R):** execution drift conditional on staying
+    within c, plus (E[attempts] − 1) × retry drift, plus p^R·φ, plus
+    E[attempts] fees.
+  - **DEFER:** when the cheapest cost exceeds `deferThresholdBps`
+    (default 100).
+- Returns the chosen mode, the cheapest configuration of **every** family,
+  every grid point, coverage and `lowConfidence` per candidate, and
+  `splitAtGridBoundary` (the best k is the largest allowed).
+- **Assumptions, stated in code:**
+  - φ defaults to the cap; fee is $0.002 per transaction; latency 5 s.
+  - A pool fully recovers between portions at least 10 s apart
+    (`minPortionIntervalSeconds`). **Recovery was never measured**, so
+    **SPLIT's predicted saving is an upper bound.**
+  - Grid: k ∈ {2…24}, W ∈ {30…900 s}, tighter caps 25/50/75% with R ∈ {2, 3}.
+- **Tests (17):** tiny deep → SEND_NOW; large thin → SPLIT; long adverse
+  tail → TIGHTEN_AND_RETRY; above threshold → DEFER; the grid rules;
+  exact base-unit splitting; exact quantile integration; determinism; and a
+  run against the example artifact.
+- **Against the example artifact:**
+  - $100 SOL → SEND_NOW 1.6 bps.
+  - $10k BONK → SPLIT k=24 at 8.5 bps, against 101 bps sent whole.
+  - $200k BONK → SPLIT 88 bps, against 1,672 bps.
+  - $1k JUP at a 5 bps cap → TIGHTEN_AND_RETRY.
+  - **Nearly everything is low confidence today, honestly so:** the
+    training period (before 09:24 UTC) has no SOL/USDC +5 s cell and no
+    thin-pair cells, so execution drift falls back to depth level. **Run
+    the final Colab fit late**, once the time split's training window
+    includes post-fix data.
+
 ## Demo-day checklist (add to it as things come up)
 
 - [ ] `docker compose up --build`: the app image predates P1.

@@ -129,12 +129,15 @@ function fitPowerLaw(rows: { n: number; impact: number }[]): PowerLaw | null {
   const sxx = x.reduce((s, v) => s + (v - mx) ** 2, 0);
   if (sxx === 0) return null;
   const b = x.reduce((s, v, i) => s + (v - mx) * (y[i] - my), 0) / sxx;
+  // The coverage range is where the pair has data at all, not just where
+  // impact was above the floor: a $100 SOL trade is well sampled even though
+  // its impact is too small to enter the log-space fit.
   return {
     a: Math.pow(10, my - b * mx),
     b,
     n: fit.length,
-    notionalMinUsd: Math.min(...fit.map((r) => r.n)),
-    notionalMaxUsd: Math.max(...fit.map((r) => r.n)),
+    notionalMinUsd: Math.min(...rows.map((r) => r.n)),
+    notionalMaxUsd: Math.max(...rows.map((r) => r.n)),
   };
 }
 

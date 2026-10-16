@@ -319,8 +319,9 @@ def fit_power_law(notional, impact):
     if sxx == 0:
         return None
     b = ((x - mx) * (y - my)).sum() / sxx
+    # Coverage range = where the pair has data at all, not only rows above the floor.
     return {"a": float(10 ** (my - b * mx)), "b": float(b), "n": int(len(x)),
-            "notionalMinUsd": float(notional[mask].min()), "notionalMaxUsd": float(notional[mask].max())}
+            "notionalMinUsd": float(notional.min()), "notionalMaxUsd": float(notional.max())}
 
 per_pair = {}
 for pair in PAIRS:
@@ -335,7 +336,7 @@ for depth in ["deep", "thin"]:
     if fit:
         by_depth[depth] = fit
 for pair, f in per_pair.items():
-    print(f"{pair:10s} impact = {f['a']:.4g} x (N/1000)^{f['b']:.3f}   n={f['n']}  fitted over USD {f['notionalMinUsd']:,.0f}..{f['notionalMaxUsd']:,.0f}")
+    print(f"{pair:10s} impact = {f['a']:.4g} x (N/1000)^{f['b']:.3f}   n={f['n']}  data range USD {f['notionalMinUsd']:,.0f}..{f['notionalMaxUsd']:,.0f}")
 
 def standardise(train_X, X):
     means = train_X.mean(axis=0)

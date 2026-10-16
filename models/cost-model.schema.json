@@ -100,7 +100,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["model", "baselineNotionalUsd", "perPair", "byDepth", "cells"],
-      "description": "impactBps(pair, N): params = perPair[pair], else byDepth[depth(pair)] (coverage 'fallback'). If N <= baselineNotionalUsd the result is 0. Otherwise a * (N / 1000) ^ b, floored at 0. Coverage: no params -> 'none'; fallback -> 'fallback'; N outside [notionalMinUsd, notionalMaxUsd] -> 'extrapolated'; n < minConfidentN -> 'sparse'; else 'ok', checked in that order. A pair not sampled in either direction uses byDepth.",
+      "description": "impactBps(pair, N): params = perPair[pair], else byDepth[depth(pair)] (coverage 'fallback'). If N <= baselineNotionalUsd the result is 0. Otherwise a * (N / 1000) ^ b, floored at 0. Coverage: no params -> 'none'; fallback -> 'fallback'; N outside [notionalMinUsd, notionalMaxUsd], the notional range of ALL the pair's training rows (not only those above the floor) -> 'extrapolated'; n < minConfidentN -> 'sparse'; else 'ok', checked in that order. A pair not sampled in either direction uses byDepth.",
       "properties": {
         "model": { "const": "powerlaw" },
         "baselineNotionalUsd": { "type": "number", "minimum": 0 },
