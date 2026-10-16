@@ -47,7 +47,7 @@ export default function SwapPanel({
   );
   const [baseAmount, setBaseAmount] = useState<string>("");
 
-  const { quote, loading, error } = useJupiterQuote({
+  const { quote, current, loading, error } = useJupiterQuote({
     baseAsset,
     quoteAsset,
     baseAmount,
@@ -70,17 +70,30 @@ export default function SwapPanel({
   }, [loadLedger]);
 
   async function executeSwap() {
-    if (!quote?.raw) return;
+    if (!quote) return;
 
     setBusy(true);
     setNotice(null);
 
     try {
+      // Only what the user chose. The server quotes for itself and settles
+      // against that; the quote on screen is never sent back.
       const res = await axios.post("/api/swap", {
-        quoteResponse: quote.raw,
         walletId,
+        inputMint: baseAsset.mint,
+        outputMint: quoteAsset.mint,
+        inAmountBaseUnits: quote.inAmountBaseUnits,
+        slippageBps: DEFAULT_SLIPPAGE_BPS,
       });
-      setReceipt(res.data);
+
+      if (res.status === 202) {
+        // Broadcast, but confirmation did not come back in time.
+        setReceipt(null);
+        setNotice(res.data.message ?? "Submitted; confirmation is still pending.");
+      } else {
+        setReceipt(res.data);
+      }
+
       setBaseAmount("");
       await Promise.all([onBalancesChanged(), loadLedger()]);
     } catch (err) {
@@ -179,7 +192,7 @@ export default function SwapPanel({
 
         <button
           onClick={executeSwap}
-          disabled={!quote || busy || insufficient}
+          disabled={!current || busy || insufficient}
           className="mt-6 w-full rounded-[6px] bg-emerald py-3 text-sm font-medium text-paper hover:bg-emerald-deep disabled:cursor-not-allowed disabled:bg-rule disabled:text-ink-faint"
         >
           {busy ? "Settling on devnet" : "Swap"}

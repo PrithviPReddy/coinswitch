@@ -1,16 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { SupportedToken } from "../lib/constants";
+import { decimalToBaseUnits, quoteKey } from "../lib/amounts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export type QuoteState = {
+  /** What this quote was asked for: pair and exact input size. */
+  key: string;
+  inAmountBaseUnits: string;
   outAmount: number;
   priceImpactPct: number | null;
   routeLabels: string[];
   raw: any;
 };
 
+/**
+ * A display quote for the current pair and amount.
+ *
+ * The held quote is cleared the moment the pair or amount changes, and
+ * `current` is true only while the quote on screen was fetched for exactly
+ * what is selected now. The swap button keys off `current`, so it can never
+ * act on a quote left over from a different pair.
+ *
+ * The server re-quotes for itself when the swap is submitted; this one is
+ * never sent back.
+ */
 export function useJupiterQuote({
   baseAsset,
   quoteAsset,
@@ -27,29 +42,30 @@ export function useJupiterQuote({
   // Guards against a slow early request overwriting a fast later one.
   const requestId = useRef(0);
 
+  const amount = baseAmount ? decimalToBaseUnits(baseAmount, baseAsset.decimals) : null;
+  const key = quoteKey(baseAsset.mint, quoteAsset.mint, amount);
+
   useEffect(() => {
-    if (!baseAmount || Number(baseAmount) <= 0) {
-      setQuote(null);
-      setError(null);
+    const id = ++requestId.current;
+
+    // Whatever was on screen belongs to the previous inputs.
+    setQuote(null);
+    setError(null);
+
+    if (key === null || amount === null) {
+      setLoading(false);
       return;
     }
 
-    const id = ++requestId.current;
+    setLoading(true);
 
     const timeoutId = setTimeout(async () => {
-      setLoading(true);
-      setError(null);
-
       try {
-        const amount = Math.round(
-          Number(baseAmount) * Math.pow(10, baseAsset.decimals),
-        );
-
         const response = await axios.get("/api/quote", {
           params: {
             inputMint: baseAsset.mint,
             outputMint: quoteAsset.mint,
-            amount,
+            amount: amount.toString(),
           },
         });
 
@@ -58,22 +74,18 @@ export function useJupiterQuote({
         const data = response.data;
 
         setQuote({
-          outAmount:
-            Number(data.outAmount) / Math.pow(10, quoteAsset.decimals),
+          key,
+          inAmountBaseUnits: String(data.inAmount),
+          outAmount: Number(data.outAmount) / Math.pow(10, quoteAsset.decimals),
           priceImpactPct:
-            data.priceImpactPct === undefined
-              ? null
-              : Number(data.priceImpactPct),
+            data.priceImpactPct === undefined ? null : Number(data.priceImpactPct),
           routeLabels: Array.isArray(data.routePlan)
-            ? data.routePlan
-                .map((leg: any) => leg?.swapInfo?.label)
-                .filter(Boolean)
+            ? data.routePlan.map((leg: any) => leg?.swapInfo?.label).filter(Boolean)
             : [],
           raw: data,
         });
       } catch (err) {
         if (id !== requestId.current) return;
-        setQuote(null);
         setError(
           axios.isAxiosError(err) && err.response?.data?.error
             ? err.response.data.error
@@ -85,7 +97,12 @@ export function useJupiterQuote({
     }, 400);
 
     return () => clearTimeout(timeoutId);
-  }, [baseAmount, baseAsset, quoteAsset]);
+    // key captures the pair and the exact amount; amount and the tokens are
+    // read through it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
-  return { quote, setQuote, loading, error };
+  const current = quote !== null && quote.key === key && !loading;
+
+  return { quote: current ? quote : null, current, loading, error };
 }

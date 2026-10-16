@@ -41,7 +41,7 @@ export default function Terminal({
   const publicKey = selected?.publicKey ?? "";
   const walletId = selected?.id ?? "";
 
-  const { tokenBalances, refresh } = useTokens(publicKey);
+  const { tokenBalances, error: balanceError, refresh } = useTokens(publicKey);
 
   const balanceOf = (token: SupportedToken) =>
     tokenBalances?.tokens.find((t) => t.mint === token.mint)?.balance ?? 0;
@@ -138,6 +138,10 @@ export default function Terminal({
 
           <div className="panel p-6">
             <h2 className="text-base text-ink">Balances</h2>
+
+            {balanceError && (
+              <p className="mt-3 text-sm text-flag">{balanceError}</p>
+            )}
 
             <ul className="mt-4 space-y-3.5">
               {SUPPORTED_TOKENS.map((token) => (

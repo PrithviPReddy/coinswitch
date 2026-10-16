@@ -1,11 +1,13 @@
 import {
   Keypair,
   PublicKey,
+  SendTransactionError,
   SystemProgram,
   Transaction,
   TransactionInstruction,
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
+import bs58 from "bs58";
 import {
   createAssociatedTokenAccountIdempotentInstruction,
   createMintToInstruction,
@@ -14,6 +16,66 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { devnetConnection, TokenDetails } from "./constants";
+
+/**
+ * A devnet mint the app needs is missing or malformed in the environment.
+ * Raised at first use with the variable named, rather than surfacing later
+ * as web3.js's "Invalid public key input".
+ */
+export class MintConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MintConfigError";
+  }
+}
+
+/**
+ * Settlement is known not to have applied: rejected before broadcast, failed
+ * on chain, or expired unconfirmed. Only this may be recorded as Failed.
+ */
+export class SettlementNotAppliedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SettlementNotAppliedError";
+  }
+}
+
+/**
+ * The transaction was broadcast but its fate is unknown: confirmation timed
+ * out, or the RPC failed mid-wait. It may yet land, so it is never Failed.
+ */
+export class SettlementUncertainError extends Error {
+  constructor(
+    message: string,
+    readonly signature: string,
+  ) {
+    super(message);
+    this.name = "SettlementUncertainError";
+  }
+}
+
+/** The token's devnet mint as a key, or a MintConfigError naming its variable. */
+export function requireDevnetMint(token: TokenDetails): PublicKey {
+  const variable = token.devnetMintEnv ?? `the devnet mint for ${token.name}`;
+  const fix =
+    "Run `npm run setup:devnet`, copy the DEVNET_USDC_MINT and DEVNET_USDT_MINT " +
+    "lines it prints into .env, then restart the app (or recreate the container).";
+
+  if (!token.devnetMint) {
+    throw new MintConfigError(`${variable} is not set, so ${token.name} cannot move on devnet. ${fix}`);
+  }
+
+  try {
+    return new PublicKey(token.devnetMint);
+  } catch {
+    throw new MintConfigError(
+      `${variable} is set to "${token.devnetMint}", which is not a valid Solana address. ${fix}`,
+    );
+  }
+}
+
+/** How long to wait for a broadcast transaction before calling it uncertain. */
+const CONFIRM_TIMEOUT_MS = Number(process.env.SETTLE_CONFIRM_TIMEOUT_MS || 60_000);
 
 /**
  * The vault is a single devnet keypair that holds the project's own mints and
@@ -71,48 +133,85 @@ async function confirmSignature(
   signature: string,
   lastValidBlockHeight: number,
 ): Promise<void> {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
 
-  while (Date.now() < deadline) {
-    const { value } = await devnetConnection.getSignatureStatuses([signature]);
-    const status = value[0];
+  try {
+    while (Date.now() < deadline) {
+      const { value } = await devnetConnection.getSignatureStatuses([signature]);
+      const status = value[0];
 
-    if (status?.err) {
-      throw new Error(
-        `Transaction ${signature} failed on chain: ${JSON.stringify(status.err)}`,
-      );
+      if (status?.err) {
+        throw new SettlementNotAppliedError(
+          `Transaction ${signature} failed on chain: ${JSON.stringify(status.err)}`,
+        );
+      }
+
+      if (
+        status?.confirmationStatus === "confirmed" ||
+        status?.confirmationStatus === "finalized"
+      ) {
+        return;
+      }
+
+      // Once the chain passes this height the blockhash can no longer be
+      // included, so there is nothing left to wait for.
+      const blockHeight = await devnetConnection.getBlockHeight("confirmed");
+
+      if (blockHeight > lastValidBlockHeight) {
+        // One last look through history before declaring it dead: a status
+        // lookup can lag a transaction that landed in the final valid block.
+        const { value: final } = await devnetConnection.getSignatureStatuses(
+          [signature],
+          { searchTransactionHistory: true },
+        );
+        if (final[0] && !final[0].err) return;
+
+        throw new SettlementNotAppliedError(
+          `Transaction ${signature} expired before confirming. It was not applied.`,
+        );
+      }
+
+      await sleep(1000);
     }
-
-    if (
-      status?.confirmationStatus === "confirmed" ||
-      status?.confirmationStatus === "finalized"
-    ) {
-      return;
-    }
-
-    // Once the chain passes this height the blockhash can no longer be
-    // included, so there is nothing left to wait for.
-    const blockHeight = await devnetConnection.getBlockHeight("confirmed");
-
-    if (blockHeight > lastValidBlockHeight) {
-      throw new Error(
-        `Transaction ${signature} expired before confirming. It was not applied.`,
-      );
-    }
-
-    await sleep(1000);
+  } catch (error) {
+    if (error instanceof SettlementNotAppliedError) throw error;
+    // The RPC failed while we were waiting. The transaction may still land.
+    throw new SettlementUncertainError(
+      `Lost contact with devnet while confirming ${signature}. It may still land; check Solscan before retrying.`,
+      signature,
+    );
   }
 
-  throw new Error(
-    `Timed out waiting for ${signature}. Check it on Solscan before retrying.`,
+  throw new SettlementUncertainError(
+    `Timed out waiting for ${signature}. It may still land; check Solscan before retrying.`,
+    signature,
   );
 }
 
-/** Sends a set of instructions and waits for confirmation over HTTP. */
+export type SendHooks = {
+  /**
+   * Called with the signature once the transaction is signed and before it is
+   * broadcast, so a caller can persist it first. If the process dies after
+   * this point, the record still points at whatever happened on chain.
+   */
+  onSigned?: (signature: string) => Promise<void> | void;
+};
+
+/**
+ * Signs, broadcasts and confirms a set of instructions over HTTP.
+ *
+ * Outcomes are typed so callers never have to guess:
+ *   returns                    confirmed
+ *   SettlementNotAppliedError  known not to have applied
+ *   SettlementUncertainError   broadcast, fate unknown (record as Pending)
+ * Anything thrown before onSigned runs happened before signing, so nothing
+ * was sent.
+ */
 async function sendAndConfirm(
   instructions: TransactionInstruction[],
   signers: Keypair[],
   feePayer: PublicKey,
+  hooks: SendHooks = {},
 ): Promise<string> {
   const { blockhash, lastValidBlockHeight } =
     await devnetConnection.getLatestBlockhash("confirmed");
@@ -125,10 +224,28 @@ async function sendAndConfirm(
 
   transaction.sign(...signers);
 
-  const signature = await devnetConnection.sendRawTransaction(
-    transaction.serialize(),
-    { maxRetries: 3 },
-  );
+  // The fee payer's signature is the transaction id, known before broadcast.
+  const signature = bs58.encode(transaction.signature!);
+  await hooks.onSigned?.(signature);
+
+  try {
+    await devnetConnection.sendRawTransaction(transaction.serialize(), {
+      maxRetries: 3,
+    });
+  } catch (error) {
+    // A preflight rejection means the RPC refused to forward it at all.
+    if (error instanceof SendTransactionError) {
+      throw new SettlementNotAppliedError(
+        `Devnet rejected the transaction before broadcast: ${error.message}`,
+      );
+    }
+    // Anything else (a dropped connection) may have happened after the RPC
+    // accepted it, so it is not safe to call it failed.
+    throw new SettlementUncertainError(
+      `Could not confirm devnet received ${signature}. It may still land; check Solscan before retrying.`,
+      signature,
+    );
+  }
 
   await confirmSignature(signature, lastValidBlockHeight);
 
@@ -144,10 +261,7 @@ export async function readBalance(
     return BigInt(await devnetConnection.getBalance(owner));
   }
 
-  const ata = getAssociatedTokenAddressSync(
-    new PublicKey(token.devnetMint),
-    owner,
-  );
+  const ata = getAssociatedTokenAddressSync(requireDevnetMint(token), owner);
 
   try {
     const account = await getAccount(devnetConnection, ata);
@@ -177,7 +291,7 @@ const VAULT_HEADROOM_LAMPORTS = BigInt(10_000_000);
  * Without this check the shortfall surfaces as a raw simulation dump from the
  * System program, which tells a user nothing they can act on.
  */
-async function assertVaultCanPay(
+export async function assertVaultCanPay(
   vault: PublicKey,
   lamportsOut: bigint,
   action: string,
@@ -209,13 +323,14 @@ export async function settleSwap({
   outputToken,
   inBaseUnits,
   outBaseUnits,
+  onSigned,
 }: {
   userKeypair: Keypair;
   inputToken: TokenDetails;
   outputToken: TokenDetails;
   inBaseUnits: bigint;
   outBaseUnits: bigint;
-}): Promise<string> {
+} & SendHooks): Promise<string> {
   const vault = loadVaultKeypair();
   const user = userKeypair.publicKey;
 
@@ -239,7 +354,7 @@ export async function settleSwap({
       }),
     );
   } else {
-    const mint = new PublicKey(inputToken.devnetMint);
+    const mint = requireDevnetMint(inputToken);
     const from = getAssociatedTokenAddressSync(mint, user);
     const to = getAssociatedTokenAddressSync(mint, vault.publicKey);
 
@@ -271,7 +386,7 @@ export async function settleSwap({
       }),
     );
   } else {
-    const mint = new PublicKey(outputToken.devnetMint);
+    const mint = requireDevnetMint(outputToken);
     const from = getAssociatedTokenAddressSync(mint, vault.publicKey);
     const to = getAssociatedTokenAddressSync(mint, user);
 
@@ -295,7 +410,31 @@ export async function settleSwap({
     );
   }
 
-  return sendAndConfirm(instructions, [vault, userKeypair], vault.publicKey);
+  return sendAndConfirm(instructions, [vault, userKeypair], vault.publicKey, {
+    onSigned,
+  });
+}
+
+/** SOL each top-up sends. Small, because the vault's SOL only drains. */
+export const FUND_SOL_TOPUP = Number(process.env.FUND_SOL_TOPUP || 0.05);
+
+/**
+ * Below this the vault stops funding wallets, so whatever SOL is left goes
+ * to swap payouts and fees instead of being handed out.
+ */
+export const VAULT_SOL_FLOOR = Number(process.env.VAULT_SOL_FLOOR || 0.5);
+
+async function assertVaultAboveFloor(vault: PublicKey, topUp: bigint) {
+  const balance = BigInt(await devnetConnection.getBalance(vault));
+  const floor = BigInt(Math.floor(VAULT_SOL_FLOOR * LAMPORTS_PER_SOL));
+
+  if (balance - topUp >= floor) return;
+
+  throw new Error(
+    `Top-ups are paused: the vault holds ${fromBaseUnits(balance, 9)} SOL and keeps ` +
+      `${VAULT_SOL_FLOOR} SOL in reserve so swaps can still settle. Airdrop devnet SOL ` +
+      `to ${vault.toBase58()} (faucet.solana.com) to resume.`,
+  );
 }
 
 /**
@@ -308,8 +447,9 @@ export async function fundWallet(
   tokens: TokenDetails[],
 ): Promise<string[]> {
   const vault = loadVaultKeypair();
-  const topUp = BigInt(Math.floor(0.2 * LAMPORTS_PER_SOL));
+  const topUp = BigInt(Math.floor(FUND_SOL_TOPUP * LAMPORTS_PER_SOL));
 
+  await assertVaultAboveFloor(vault.publicKey, topUp);
   await assertVaultCanPay(vault.publicKey, topUp, "a top-up");
 
   const instructions: TransactionInstruction[] = [
@@ -323,14 +463,7 @@ export async function fundWallet(
   for (const token of tokens) {
     if (token.native) continue;
 
-    if (!token.devnetMint) {
-      throw new Error(
-        `No devnet mint configured for ${token.name}. Check DEVNET_USDC_MINT ` +
-          "and DEVNET_USDT_MINT, then recreate the app container.",
-      );
-    }
-
-    const mint = new PublicKey(token.devnetMint);
+    const mint = requireDevnetMint(token);
     const ata = getAssociatedTokenAddressSync(mint, owner);
 
     instructions.push(
@@ -400,14 +533,7 @@ export async function sendTokens({
     );
   }
 
-  if (!token.devnetMint) {
-    throw new Error(
-      `No devnet mint configured for ${token.name}. Check DEVNET_USDC_MINT ` +
-        "and DEVNET_USDT_MINT, then recreate the app container.",
-    );
-  }
-
-  const mint = new PublicKey(token.devnetMint);
+  const mint = requireDevnetMint(token);
   const from = getAssociatedTokenAddressSync(mint, sender);
   const to = getAssociatedTokenAddressSync(mint, recipient);
 

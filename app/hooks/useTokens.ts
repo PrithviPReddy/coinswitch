@@ -20,6 +20,7 @@ export function useTokens(address: string) {
   } | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!address) return;
@@ -27,6 +28,13 @@ export function useTokens(address: string) {
     try {
       const res = await axios.get(`/api/tokens`, { params: { address } });
       setTokenBalances(res.data);
+      setError(null);
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err) && err.response?.data?.error
+          ? err.response.data.error
+          : "Could not read balances from devnet.",
+      );
     } finally {
       setLoading(false);
     }
@@ -36,5 +44,5 @@ export function useTokens(address: string) {
     refresh();
   }, [refresh]);
 
-  return { loading, tokenBalances, refresh };
+  return { loading, error, tokenBalances, refresh };
 }

@@ -9,7 +9,7 @@ datasource db {
 }
 
 model User {
-  id          String      @id   @default(uuid())
+  id          String      @id @default(uuid())
   sub         String      @default("")
   username    String
   password    String?
@@ -23,10 +23,10 @@ model User {
 }
 
 model InrWallet {
-  id          String      @id   @default(uuid())
-  balance     Int
-  userId      String      @unique
-  user        User        @relation(fields: [userId],references: [id])
+  id      String @id @default(uuid())
+  balance Int
+  userId  String @unique
+  user    User   @relation(fields: [userId], references: [id])
 }
 
 // An account holds as many devnet wallets as it likes. Every one of them is
@@ -35,48 +35,65 @@ model InrWallet {
 // browser wallet. Nothing is ever imported, so a key in this table is always
 // one this project generated.
 model SolWallet {
-  id          String    @id   @default(uuid())
-  label       String
-  publicKey   String
-  privateKey  String
-  userId      String
-  user        User      @relation(fields :[userId],references: [id])
-  swaps       Swap[]
-  transfers   Transfer[]
-  createdAt   DateTime  @default(now())
+  id           String     @id @default(uuid())
+  label        String
+  publicKey    String
+  privateKey   String
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  swaps        Swap[]
+  transfers    Transfer[]
+  createdAt    DateTime   @default(now())
+  // Set when /api/fund claims a top-up; drives the per-wallet cooldown.
+  lastFundedAt DateTime?
 
   @@index([userId, createdAt])
 }
 
-// One row per swap attempt. Quoted comes from the mainnet Jupiter quote;
-// settled is read back from devnet account state after the transaction
-// confirms, so the two columns are independently sourced.
+// One row per swap attempt. The quote is the one the server fetched itself at
+// swap time, never one supplied by the client, and its provenance is stored
+// beside it. settledOut is read back from devnet account state after the
+// transaction confirms.
+//
+// status: Settled = confirmed on devnet. Failed = known not to have applied,
+// or refused before signing (e.g. the slippage bound). Pending = in flight,
+// or broadcast with an unknown outcome; signature is set whenever anything
+// was signed, so a Pending row can always be checked on Solscan.
 model Swap {
-  id             String     @id @default(uuid())
-  userId         String
-  user           User       @relation(fields: [userId], references: [id])
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
   // Nullable only because rows written before wallets could multiply predate
   // the column. Everything settled since records the wallet it moved.
-  walletId       String?
-  wallet         SolWallet? @relation(fields: [walletId], references: [id])
+  walletId String?
+  wallet   SolWallet? @relation(fields: [walletId], references: [id])
 
-  inputSymbol    String
-  outputSymbol   String
+  inputSymbol  String
+  outputSymbol String
 
-  inAmount       Decimal    @db.Decimal(30, 12)
-  quotedOut      Decimal    @db.Decimal(30, 12)
-  settledOut     Decimal?   @db.Decimal(30, 12)
+  // The server's own quote and where it came from. Null only on rows from
+  // before the server re-quoted for itself.
+  inputMint            String?
+  outputMint           String?
+  quotedAt             DateTime?
+  quoteLatencyMs       Int?
+  contextSlot          Int?
+  otherAmountThreshold String?
 
-  priceImpactPct Decimal?   @db.Decimal(12, 8)
+  inAmount   Decimal  @db.Decimal(30, 12)
+  quotedOut  Decimal  @db.Decimal(30, 12)
+  settledOut Decimal? @db.Decimal(30, 12)
+
+  priceImpactPct Decimal? @db.Decimal(12, 8)
   slippageBps    Int
-  routeLabels    String[]   @default([])
+  routeLabels    String[] @default([])
 
-  signature      String?
-  status         SwapStatus @default(Pending)
-  failureReason  String?
+  signature     String?
+  status        SwapStatus @default(Pending)
+  failureReason String?
 
-  createdAt      DateTime   @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
   @@index([walletId, createdAt])
@@ -86,24 +103,96 @@ model Swap {
 // nothing to quote and no counterparty leg: value leaves the wallet and does
 // not come back, so the row records where it went rather than what it fetched.
 model Transfer {
-  id            String         @id @default(uuid())
-  userId        String
-  user          User           @relation(fields: [userId], references: [id])
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  walletId      String
-  wallet        SolWallet      @relation(fields: [walletId], references: [id])
+  walletId String
+  wallet   SolWallet @relation(fields: [walletId], references: [id])
 
-  recipient     String
-  symbol        String
-  amount        Decimal        @db.Decimal(30, 12)
+  recipient String
+  symbol    String
+  amount    Decimal @db.Decimal(30, 12)
 
   signature     String?
   status        TransferStatus @default(Pending)
   failureReason String?
 
-  createdAt     DateTime       @default(now())
+  createdAt DateTime @default(now())
 
   @@index([walletId, createdAt])
+}
+
+// One mainnet Jupiter quote taken by the sampler (scripts/sampler). Nothing in
+// this table is ever signed or settled: it is the recorded market the cost
+// model is trained on, and rows are only ever written from a real response.
+//
+// A ladder is one sampling instant for one ordered pair: the same quote at
+// several sizes, fetched together and sharing a ladderId. measuredImpactBps is
+// computed here, from effectivePrice at this rung against rung 1 (~$25) of the
+// same ladder, and is positive when the larger size gets a worse price.
+// baselineRouteLabels is rung 1's route, so a route change can be told apart
+// from size.
+//
+// notionalUsd is the size feature; ladderRung is only a label. notionalSource
+// says how it was valued: "price_v3" is Jupiter's USD price at sample time.
+// "backfill_par" and "backfill_ladder" are rows recorded before the column
+// existed (stablecoin input at $1, or SOL input at its own ladder's rung-1
+// SOL/stable price). Nullable only so the old sampler could keep writing
+// while the new one was deployed; every row has a value after the backfill.
+//
+// Some pairs here are never settled by the app. That is deliberate: the cost
+// model is trained on a wider market than the demo trades.
+model QuoteSample {
+  id                  String       @id @default(uuid())
+  sampledAt           DateTime
+  pair                String
+  inputMint           String
+  outputMint          String
+  inAmountBaseUnits   String
+  outAmountBaseUnits  String
+  // Output per unit of input, both in whole tokens.
+  effectivePrice      Decimal      @db.Decimal(38, 18)
+  // Jupiter's own figure, stored as returned. Not relied on alone.
+  reportedImpactPct   Decimal?     @db.Decimal(24, 12)
+  measuredImpactBps   Decimal?     @db.Decimal(16, 6)
+  routeLabels         String[]     @default([])
+  baselineRouteLabels String[]     @default([])
+  notionalUsd         Decimal?     @db.Decimal(24, 6)
+  notionalSource      String?
+  hopCount            Int
+  slippageBps         Int
+  contextSlot         Int?
+  apiLatencyMs        Int
+  ladderId            String
+  ladderRung          Int
+  drifts              QuoteDrift[]
+
+  @@index([pair, sampledAt])
+  @@index([ladderId])
+  @@index([notionalSource])
+}
+
+// The same quote as an origin sample, asked again delaySeconds later. driftBps
+// is positive when the later quote pays out less, i.e. when waiting cost money.
+// delaySeconds is the nominal delay; actualElapsedMs is what really elapsed.
+model QuoteDrift {
+  id                 String      @id @default(uuid())
+  originSampleId     String
+  originSample       QuoteSample @relation(fields: [originSampleId], references: [id])
+  delaySeconds       Int
+  requotedAt         DateTime
+  outAmountBaseUnits String
+  effectivePrice     Decimal     @db.Decimal(38, 18)
+  driftBps           Decimal     @db.Decimal(16, 6)
+  // requotedAt minus the origin's sampledAt, stored so no analysis has to
+  // re-derive it. Use this, not delaySeconds, as the horizon.
+  actualElapsedMs    Int?
+  apiLatencyMs       Int
+  contextSlot        Int?
+
+  @@index([originSampleId])
+  @@index([requotedAt])
 }
 
 enum TransferStatus {

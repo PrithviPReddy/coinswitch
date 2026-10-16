@@ -7,7 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "setup:devnet": "node scripts/setup-devnet.mjs",
+    "sampler": "node scripts/sampler/index.mjs",
+    "sampler:once": "node scripts/sampler/index.mjs --once",
+    "sampler:pause": "docker compose stop sampler",
+    "sampler:resume": "docker compose start sampler",
+    "sampler:logs": "docker compose logs -f --tail 50 sampler",
+    "export:samples": "node scripts/export-samples.mjs",
     "db:migrate": "prisma migrate deploy",
     "postinstall": "prisma generate"
   },
@@ -35,6 +43,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

@@ -15,7 +15,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+# The npm cache lives in a BuildKit cache mount, so tarballs fetched before a
+# dropped connection survive into the next attempt instead of being fetched
+# again from zero. sharing=locked makes the runner stage below wait for this
+# one and then reuse its downloads rather than fetching everything in
+# parallel over the same link.
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci --ignore-scripts --fetch-retries=6 --fetch-retry-maxtimeout=120000
 
 
 FROM base AS builder
@@ -44,14 +50,18 @@ ENV HOSTNAME=0.0.0.0
 # Fresh production install rather than dragging the builder's node_modules,
 # which carries eslint, tailwind and typescript. --ignore-scripts because
 # the postinstall prisma generate has no schema at this point in the stage.
+# The cache mount is never part of the image, so there is nothing to clean.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci --omit=dev --ignore-scripts --fetch-retries=6 --fetch-retry-maxtimeout=120000
 
 COPY --from=builder --chown=node:node /app/.next            ./.next
 COPY --from=builder --chown=node:node /app/public           ./public
 COPY --from=builder --chown=node:node /app/app/generated    ./app/generated
 COPY --from=builder --chown=node:node /app/prisma           ./prisma
 COPY --from=builder --chown=node:node /app/prisma.config.ts ./prisma.config.ts
+# The quote sampler runs from this same image with a different command.
+COPY --from=builder --chown=node:node /app/scripts          ./scripts
 
 USER node
 EXPOSE 3000

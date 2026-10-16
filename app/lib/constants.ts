@@ -36,12 +36,14 @@ export interface TokenDetails {
   image: string;
   price?: number;
   decimals: number;
+  /** The environment variable devnetMint comes from, for error messages. */
+  devnetMintEnv?: string;
 }
 
 /**
  * Devnet mint addresses are created by `npm run setup:devnet` and written into
- * the environment. They are read at module load so a missing setup step fails
- * loudly at boot rather than silently mid-demo.
+ * the environment. A missing or malformed one is reported by name at first
+ * use (requireDevnetMint in devnet.ts), not as a bare key-parsing error.
  */
 const DEVNET_USDC_MINT = process.env.DEVNET_USDC_MINT ?? "";
 const DEVNET_USDT_MINT = process.env.DEVNET_USDT_MINT ?? "";
@@ -51,6 +53,7 @@ export const SUPPORTED_TOKENS: TokenDetails[] = [
     name: "USDC",
     mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     devnetMint: DEVNET_USDC_MINT,
+    devnetMintEnv: "DEVNET_USDC_MINT",
     native: false,
     image: "/tokens/USDC.png",
     decimals: 6,
@@ -59,6 +62,7 @@ export const SUPPORTED_TOKENS: TokenDetails[] = [
     name: "USDT",
     mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
     devnetMint: DEVNET_USDT_MINT,
+    devnetMintEnv: "DEVNET_USDT_MINT",
     native: false,
     image: "/tokens/USDT.png",
     decimals: 6,

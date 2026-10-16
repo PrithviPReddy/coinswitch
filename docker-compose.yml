@@ -64,5 +64,44 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Records mainnet Jupiter quotes into QuoteSample and QuoteDrift for the cost
+  # model. Read only: it holds no wallet key and signs nothing.
+  #
+  # Pause it for a live demo unless it has a key of its own, or the app's
+  # quotes can be rate limited in front of an audience:
+  #   npm run sampler:pause      (docker compose stop sampler)
+  #   npm run sampler:resume     (docker compose start sampler)
+  #
+  # Blank knobs fall through to the defaults in scripts/sampler/index.mjs, so
+  # this file never pins a stale ladder or cadence. SAMPLER_MAX_RPM is the
+  # exception: it is written here so a restart cannot silently drop it.
+  sampler:
+    build:
+      context: .
+    command: ["node", "scripts/sampler/index.mjs"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://dev:devpassword@postgres:5432/coinswitch
+      # A dedicated key, when there is one, keeps the sampler off the app's
+      # budget. Falls back to JUP_API_KEY.
+      SAMPLER_JUP_API_KEY: ${SAMPLER_JUP_API_KEY:-}
+      JUP_API_KEY: ${JUP_API_KEY:-}
+      # Burst ceiling, not average load: a nine-rung ladder is fired at once
+      # and needs nine of Jupiter's ten requests per 10 s window.
+      SAMPLER_MAX_RPM: ${SAMPLER_MAX_RPM:-60}
+      SAMPLER_INTERVAL_SECONDS: ${SAMPLER_INTERVAL_SECONDS:-}
+      SAMPLER_DRIFT_EVERY: ${SAMPLER_DRIFT_EVERY:-}
+      SAMPLER_DRIFT_DELAYS: ${SAMPLER_DRIFT_DELAYS:-}
+      SAMPLER_DRIFT_RUNGS: ${SAMPLER_DRIFT_RUNGS:-}
+      SAMPLER_DRIFT_LARGE_RUNG: ${SAMPLER_DRIFT_LARGE_RUNG:-}
+      SAMPLER_DRIFT_LARGE_EVERY: ${SAMPLER_DRIFT_LARGE_EVERY:-}
+      SAMPLER_LADDER_SOL: ${SAMPLER_LADDER_SOL:-}
+      SAMPLER_LADDER_USD: ${SAMPLER_LADDER_USD:-}
+      SAMPLER_SLIPPAGE_BPS: ${SAMPLER_SLIPPAGE_BPS:-}
+      SAMPLER_LADDER_MAX_SPAN_SECONDS: ${SAMPLER_LADDER_MAX_SPAN_SECONDS:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   pgdata:
