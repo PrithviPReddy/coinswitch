@@ -4,6 +4,9 @@
  * database.
  *
  *   npm run fit:example-model
+ *   npm run fit:example-model -- --until 2026-10-16T11:28:03.532Z   data recorded up to then
+ *   npm run fit:example-model -- --out path.json                    somewhere else
+ *   npm run fit:example-model -- --single-power-law                 no piecewise impact (for comparison)
  *
  * It exists so the inference loader, the advisor and the backtest have a
  * real, data-derived artifact to work against before the notebook's model
@@ -42,7 +45,15 @@ import {
 if (fs.existsSync(".env")) process.loadEnvFile(".env");
 const { PrismaClient } = createRequire(import.meta.url)("../app/generated/prisma/index.js");
 
-const OUT = path.resolve("models/cost-model.example.json");
+const argv = process.argv.slice(2);
+const flag = (name: string) => {
+  const i = argv.indexOf(name);
+  return i > -1 ? argv[i + 1] : undefined;
+};
+const OUT = path.resolve(flag("--out") ?? "models/cost-model.example.json");
+const UNTIL = flag("--until") ? new Date(flag("--until")!) : new Date();
+if (Number.isNaN(UNTIL.getTime())) throw new Error(`--until needs an ISO timestamp, got "${flag("--until")}"`);
+const PIECEWISE = !argv.includes("--single-power-law");
 
 // Contract constants (models/cost-model.schema.json).
 const HORIZONS = [5, 15, 30, 60];
@@ -52,6 +63,9 @@ const MIN_CELL_N = 20;
 const MIN_CONFIDENT_N = 30;
 const BASELINE_NOTIONAL_USD = 25;
 const RIDGE_ALPHA = 1.0;
+const IMPACT_TAIL_USD = 200_000;
+/** Share of the training rows, earliest first, that the single-or-hinge choice is fitted on. */
+const VALIDATION_FRACTION = 0.8;
 const TRAIN_FRACTION = 0.7;
 
 // Collection phases, for the drift coverage table.
@@ -118,6 +132,81 @@ function fitRidge(X: number[][], y: number[], alpha: number) {
 const ridgePredict = (r: ReturnType<typeof fitRidge>, x: number[]) =>
   r.intercept + r.coef.reduce((s, c, j) => s + c * (r.stds[j] > 0 ? (x[j] - r.means[j]) / r.stds[j] : 0), 0);
 
+/**
+ * A continuous piecewise power law: a hinge in log10 space,
+ *
+ *   log10 I = c + b1 u + (b2 - b1) max(0, u - k),   u = log10(N / 1000),
+ *
+ * with the knot k at one of the rungs' median u, fitted by OLS for each
+ * candidate knot; the knot with the least squared error wins. Each side needs
+ * MIN_CONFIDENT_N rows. Returns the segments, or null when no knot qualifies.
+ * Whether the hinge is used at all is decided by selectImpactFit.
+ */
+function fitPiecewise(rows: { n: number; impact: number; rung: number }[]): PowerLaw["segments"] | null {
+  const fit = rows.filter((r) => r.impact > IMPACT_FLOOR_BPS && r.n > 0);
+  if (fit.length < 2 * MIN_CONFIDENT_N) return null;
+  const u = fit.map((r) => Math.log10(r.n / 1000));
+  const y = fit.map((r) => Math.log10(r.impact));
+  const N = fit.length;
+
+  const sse = (X: number[][]) => {
+    const p = X[0].length;
+    const XtX = Array.from({ length: p }, (_, i) => Array.from({ length: p }, (_, j) => X.reduce((s, row) => s + row[i] * row[j], 0)));
+    const Xty = Array.from({ length: p }, (_, i) => X.reduce((s, row, r) => s + row[i] * y[r], 0));
+    const beta = solve(XtX, Xty);
+    const resid = X.reduce((s, row, r) => s + (y[r] - row.reduce((t, x, j) => t + x * beta[j], 0)) ** 2, 0);
+    return { beta, sse: resid };
+  };
+  const rungs = [...new Set(fit.map((r) => r.rung))].sort((a, b) => a - b);
+  let best: { k: number; beta: number[]; sse: number } | null = null;
+  for (const rung of rungs) {
+    const us = fit.flatMap((r, i) => (r.rung === rung ? [u[i]] : [])).sort((a, b) => a - b);
+    const k = us[Math.floor(us.length / 2)];
+    const below = u.filter((x) => x <= k).length;
+    if (below < MIN_CONFIDENT_N || N - below < MIN_CONFIDENT_N) continue;
+    const h = sse(u.map((x) => [1, x, Math.max(0, x - k)]));
+    if (h.beta.every(Number.isFinite) && (!best || h.sse < best.sse)) best = { k, ...h };
+  }
+  if (!best) return null;
+
+  const [c, b1, d] = best.beta;
+  const below = u.filter((x) => x <= best.k).length;
+  return [
+    { fromUsd: 0, a: Math.pow(10, c), b: b1, n: below },
+    { fromUsd: 1000 * Math.pow(10, best.k), a: Math.pow(10, c - d * best.k), b: b1 + d, n: N - below },
+  ];
+}
+
+const lineValue = (p: PowerLaw, n: number) => {
+  let line: { a: number; b: number } = p;
+  for (const seg of p.segments ?? []) if (seg.fromUsd <= n) line = seg;
+  return n <= BASELINE_NOTIONAL_USD ? 0 : Math.max(0, line.a * Math.pow(n / 1000, line.b));
+};
+
+/**
+ * Single line or hinge, decided on the training rows alone, in time order:
+ * both are fitted on the earliest VALIDATION_FRACTION of them and scored (MAE,
+ * bps, on every row, as the test metric is) on the rest. The hinge is used,
+ * refitted on all the training rows, only if it won. The test split is never
+ * consulted. (In-sample BIC chose hinges for the thin pairs that then did
+ * worse out of sample.)
+ */
+function selectImpactFit(rows: { n: number; impact: number; rung: number; t: number }[]): PowerLaw | null {
+  const single = fitPowerLaw(rows);
+  if (!single || !PIECEWISE) return single;
+  const times = rows.map((r) => r.t).sort((a, b) => a - b);
+  const cut = times[Math.floor(VALIDATION_FRACTION * (times.length - 1))];
+  const early = rows.filter((r) => r.t < cut);
+  const late = rows.filter((r) => r.t >= cut);
+  const earlySingle = fitPowerLaw(early);
+  const earlySegments = fitPiecewise(early);
+  if (!earlySingle || !earlySegments || !late.length) return single;
+  const mae = (p: PowerLaw) => mean(late.map((r) => Math.abs(lineValue(p, r.n) - r.impact)));
+  if (!(mae({ ...earlySingle, segments: earlySegments }) < mae(earlySingle))) return single;
+  const segments = fitPiecewise(rows);
+  return segments ? { ...single, segments } : single;
+}
+
 /** OLS of log10(impact) on log10(N / 1000): a power law impact = a (N/1000)^b. */
 function fitPowerLaw(rows: { n: number; impact: number }[]): PowerLaw | null {
   const fit = rows.filter((r) => r.impact > IMPACT_FLOOR_BPS && r.n > 0);
@@ -162,14 +251,16 @@ async function load() {
       SELECT id, pair, "ladderId", "ladderRung" AS rung, "sampledAt",
              "notionalUsd"::text AS "notionalUsd", "measuredImpactBps"::text AS "impactBps",
              "effectivePrice"::text AS price
-        FROM "QuoteSample"`) as {
+        FROM "QuoteSample"
+       WHERE "sampledAt" <= ${UNTIL}`) as {
       id: string; pair: string; ladderId: string; rung: number; sampledAt: Date;
       notionalUsd: string | null; impactBps: string | null; price: string;
     }[];
     const drifts = (await db.$queryRaw`
       SELECT d."originSampleId" AS "originId", s.pair, s."sampledAt", d."actualElapsedMs" AS "elapsedMs",
              d."driftBps"::text AS "driftBps"
-        FROM "QuoteDrift" d JOIN "QuoteSample" s ON s.id = d."originSampleId"`) as {
+        FROM "QuoteDrift" d JOIN "QuoteSample" s ON s.id = d."originSampleId"
+       WHERE d."requotedAt" <= ${UNTIL}`) as {
       originId: string; pair: string; sampledAt: Date; elapsedMs: number; driftBps: string;
     }[];
     return {
@@ -215,14 +306,16 @@ async function main() {
   const train = impactRows.filter((s) => s.t < cutoff);
   const test = impactRows.filter((s) => s.t >= cutoff);
 
+  const fitBoth = (rows: Sample[]): PowerLaw | null =>
+    selectImpactFit(rows.map((s) => ({ n: s.notionalUsd!, impact: s.impactBps!, rung: s.rung, t: s.t })));
   const perPair: Record<string, PowerLaw> = {};
   for (const pair of pairs) {
-    const fit = fitPowerLaw(train.filter((s) => s.pair === pair).map((s) => ({ n: s.notionalUsd!, impact: s.impactBps! })));
+    const fit = fitBoth(train.filter((s) => s.pair === pair));
     if (fit) perPair[pair] = fit;
   }
   const byDepth: Partial<Record<"deep" | "thin", PowerLaw>> = {};
   for (const depth of ["deep", "thin"] as const) {
-    const fit = fitPowerLaw(train.filter((s) => depthOf(s.pair) === depth).map((s) => ({ n: s.notionalUsd!, impact: s.impactBps! })));
+    const fit = fitBoth(train.filter((s) => depthOf(s.pair) === depth));
     if (fit) byDepth[depth] = fit;
   }
 
@@ -353,9 +446,19 @@ async function main() {
       return [dc, errors(rs.map(pred), rs.map(actual))];
     }));
 
+  // The single line on the same rows, for comparison with the piecewise fit.
+  const singleOnly: CostModel = JSON.parse(JSON.stringify(model));
+  for (const p of [...Object.values(singleOnly.impact.perPair), ...Object.values(singleOnly.impact.byDepth)]) if (p) delete p.segments;
   model.metrics.impact = {
     powerLaw: byDepthMetrics(test, (s) => depthOf(s.pair), (s) => predictImpact(model, s.pair, s.notionalUsd!).value, (s) => s.impactBps!),
+    powerLawSingle: byDepthMetrics(test, (s) => depthOf(s.pair), (s) => predictImpact(singleOnly, s.pair, s.notionalUsd!).value, (s) => s.impactBps!),
     ridgeBaseline: byDepthMetrics(test, (s) => depthOf(s.pair), (s) => ridgePredict(impactRidge, impactX(s)), (s) => s.impactBps!),
+  };
+  // The tail, where a single line is most likely to be wrong.
+  const tail = test.filter((s) => s.notionalUsd! >= IMPACT_TAIL_USD);
+  model.metrics.impactTail200k = {
+    powerLaw: byDepthMetrics(tail, (s) => depthOf(s.pair), (s) => predictImpact(model, s.pair, s.notionalUsd!).value, (s) => s.impactBps!),
+    powerLawSingle: byDepthMetrics(tail, (s) => depthOf(s.pair), (s) => predictImpact(singleOnly, s.pair, s.notionalUsd!).value, (s) => s.impactBps!),
   };
 
   const trainMeanByCell: Record<string, number> = {};
@@ -487,7 +590,16 @@ async function main() {
   fs.writeFileSync(OUT, JSON.stringify(model, null, 1) + "\n");
   console.log(`wrote ${path.relative(process.cwd(), OUT)}  ${model.modelVersion}`);
   console.log(`split cutoff ${model.split.cutoff}: impact train ${train.length} / test ${test.length}, drift train ${dTrain.length} / test ${dTest.length}`);
-  console.log(`power laws: ${Object.entries(perPair).map(([p, f]) => `${p} a=${f.a.toPrecision(3)} b=${f.b.toFixed(2)} n=${f.n}`).join("; ")}`);
+  console.log(`data up to ${UNTIL.toISOString()}: ${samples.length} samples, ${drifts.length} drift rows`);
+  for (const [p, f] of Object.entries(perPair)) {
+    const segs = f.segments ? f.segments.map((g) => `from ${Math.round(g.fromUsd).toLocaleString("en-US")}: a=${g.a.toPrecision(3)} b=${g.b.toFixed(2)} n=${g.n}`).join(" | ") : "single line kept";
+    console.log(`  ${p.padEnd(10)} single a=${f.a.toPrecision(3)} b=${f.b.toFixed(2)} n=${f.n}   piecewise: ${segs}`);
+  }
+  const m = model.metrics;
+  for (const d of ["deep", "thin"]) {
+    console.log(`  ${d} test MAE: model ${m.impact.powerLaw[d]?.mae?.toFixed(2)} vs single ${m.impact.powerLawSingle[d]?.mae?.toFixed(2)} (n=${m.impact.powerLaw[d]?.n});` +
+      ` >= $200k: ${m.impactTail200k.powerLaw[d]?.mae?.toFixed(2)} vs ${m.impactTail200k.powerLawSingle[d]?.mae?.toFixed(2)} (n=${m.impactTail200k.powerLaw[d]?.n})`);
+  }
 }
 
 main().catch((error) => {

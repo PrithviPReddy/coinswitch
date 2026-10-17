@@ -15,7 +15,16 @@ import { validateJson } from "./jsonSchema";
 export type Coverage = "ok" | "sparse" | "fallback" | "extrapolated" | "none";
 export type Depth = "deep" | "thin";
 
-export type PowerLaw = { a: number; b: number; n: number; notionalMinUsd: number; notionalMaxUsd: number };
+export type PowerLawSegment = { fromUsd: number; a: number; b: number; n: number };
+export type PowerLaw = {
+  a: number;
+  b: number;
+  n: number;
+  notionalMinUsd: number;
+  notionalMaxUsd: number;
+  /** A continuous piecewise power law; when present it is the prediction. */
+  segments?: PowerLawSegment[];
+};
 
 export type CostModel = {
   kind: "coinswitch-cost-model";
@@ -107,23 +116,55 @@ export function nearestMeasuredHorizon(model: CostModel, horizonSeconds: number)
   return best;
 }
 
+/** The line that prices N: the last segment starting at or below N, else the single power law. */
+export function impactLine(params: PowerLaw, notionalUsd: number): { a: number; b: number; n: number } {
+  if (!params.segments?.length) return params;
+  let line = params.segments[0];
+  for (const seg of params.segments) if (seg.fromUsd <= notionalUsd) line = seg;
+  return line;
+}
+
 export function predictImpact(model: CostModel, pair: string, notionalUsd: number): { value: number; coverage: Coverage } {
   const { source, reversed } = resolvePair(model, pair);
   const own = source ? model.impact.perPair[source] : undefined;
   const params = own ?? model.impact.byDepth[depthOf(pair)];
   if (!params) return { value: 0, coverage: "none" };
 
+  const line = impactLine(params, notionalUsd);
   const value =
     notionalUsd <= model.impact.baselineNotionalUsd
       ? 0
-      : Math.max(0, params.a * Math.pow(notionalUsd / 1000, params.b));
+      : Math.max(0, line.a * Math.pow(notionalUsd / 1000, line.b));
 
   let coverage: Coverage = "ok";
   if (!own || reversed) coverage = "fallback";
   else if (notionalUsd < params.notionalMinUsd || notionalUsd > params.notionalMaxUsd) coverage = "extrapolated";
-  else if (params.n < model.constants.minConfidentN) coverage = "sparse";
+  else if (line.n < model.constants.minConfidentN) coverage = "sparse";
 
   return { value, coverage };
+}
+
+/** Contract rules for segments that a JSON schema cannot express. */
+export function segmentProblems(where: string, params: PowerLaw): string[] {
+  const segs = params.segments;
+  if (!segs) return [];
+  const problems: string[] = [];
+  if (segs[0].fromUsd !== 0) problems.push(`${where}: segments[0].fromUsd must be 0, got ${segs[0].fromUsd}`);
+  for (let j = 1; j < segs.length; j++) {
+    const prev = segs[j - 1];
+    const seg = segs[j];
+    if (!(seg.fromUsd > prev.fromUsd)) {
+      problems.push(`${where}: segments must be in strictly ascending fromUsd (${prev.fromUsd} then ${seg.fromUsd})`);
+      continue;
+    }
+    const x = seg.fromUsd / 1000;
+    const left = prev.a * Math.pow(x, prev.b);
+    const right = seg.a * Math.pow(x, seg.b);
+    if (Math.abs(left - right) > 1e-6 * Math.max(Math.abs(left), Math.abs(right), 1e-12)) {
+      problems.push(`${where}: segments ${j - 1} and ${j} disagree at ${seg.fromUsd} USD (${left} vs ${right}); the fit must be continuous`);
+    }
+  }
+  return problems;
 }
 
 /** The drift model's feature vector, raw, in contract order. */
@@ -306,6 +347,10 @@ export function validateCostModel(
   const names = model.features.map((f) => f.name).join(",");
   if (names !== "sqrt_horizon_s,vol_sigma_bps,thin_sqrt_horizon_s") {
     errors.push(`features must be [sqrt_horizon_s, vol_sigma_bps, thin_sqrt_horizon_s] in that order, got [${names}]`);
+  }
+  for (const [pair, params] of Object.entries(model.impact.perPair)) errors.push(...segmentProblems(`impact.perPair.${pair}`, params));
+  for (const [depth, params] of Object.entries(model.impact.byDepth)) {
+    if (params) errors.push(...segmentProblems(`impact.byDepth.${depth}`, params));
   }
   for (const [key, cell] of Object.entries(model.shortHorizon.cells)) {
     if (cell.q.some((v, i) => i > 0 && v < cell.q[i - 1])) errors.push(`shortHorizon.cells.${key}: quantiles not ascending`);

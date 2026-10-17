@@ -494,6 +494,46 @@ unit tests.
   `restart: unless-stopped` (compose file, plus `docker update` on the
   running container). `caffeinate` was re-armed on the new backend PID.
 
+### Piecewise impact fit (2026-10-17)
+- **Contract:** an optional `segments` on each power law: a continuous
+  piecewise power law, ascending `fromUsd` from 0, checked for continuity
+  at each breakpoint. Old artifacts stay valid. Prediction and sparse
+  coverage use the segment that prices N. 5 new loader tests (148 in all).
+- **Fit** (TS reference and notebook, the same method): a hinge in log10
+  space with the knot at a rung's median, least squares, at least 30 rows
+  per side.
+  - Single line or hinge is **chosen on the training rows alone**, in time
+    order: fit both on the earliest 80% and keep the hinge only if it wins
+    on the latest 20% (MAE, bps). The test split is never used.
+  - The first version chose by in-sample BIC; that gave thin pairs hinges
+    that did worse on test (220 vs 182 bps).
+- `fit:example-model` takes `--until`, `--out` and `--single-power-law`.
+  With `--until 2026-10-16T11:28:03.532Z --single-power-law` it reproduces
+  the old example exactly (same rows, cutoff, parameters and content hash
+  c1df57e7).
+- **Example refitted on the same data** (`example-cost-20261017T0050Z-34ceabdb`).
+  Test MAE:
+  - deep 0.94 vs 1.42 bps single (n=1,057); ≥$200k 1.10 vs 3.02 (n=302)
+  - thin 139.7 vs 182.5 (n=1,026); ≥$200k 442.9 vs 586.8 (n=294)
+  - Hinges for SOL/USDC (~$213k), SOL/USDT and USDC/SOL (~$43k), JUP
+    (~$2k) and WIF (~$10k). BONK keeps the single line.
+- **Deep $1M flips to SPLIT:**
+  - predicted impact 8.78 bps vs 8.34 recorded (was 3.16)
+  - SPLIT for 156 of 156 at ρ = 1, saving a median 6.4 bps of 8.9, worse
+    than one order in 18; mean −0.25 bps if the pool never recovers
+  - SOL/USDC 48 of 48
+  - The app: 10,000 SOL → USDC is advised 4 × 30 s at ~4 bps vs ~10 sent
+    whole.
+- **Side effect at deep ~$200k:** 83 of 156 split (4 × 30 s), +0.4 bps where
+  split, 31 worse; the recorded curves say a split never pays for 132 of
+  them. Marginal, reported.
+- Backtest re-run (pinned, `--until 2026-10-16T14:25:00Z`). README results,
+  model findings (the drift figures were stale: now 2.97 vs 2.75 deep,
+  2.71 vs 2.38 thin) and the demo path updated.
+- **The notebook's Python was not run here** (no Python on this machine).
+  It mirrors the TS line by line; `validate:model`'s self-test vectors
+  check its inference against TypeScript when the artifact comes back.
+
 ## Demo-day checklist (add to it as things come up)
 
 - [ ] Docker Desktop running, and `docker compose ps` shows postgres and
@@ -513,8 +553,9 @@ unit tests.
 - [ ] Have one settled thin-pair swap already open in a Solscan tab, as a
       fallback.
 - [ ] Rehearse the advice panel: SOL → USDC small (SEND_NOW), then
-      10,000,000,000 BONK → USDC (~$30k, SPLIT, low confidence, the
-      live-vs-model impact line). Be ready to explain both "low confidence"
+      10,000 SOL → USDC (~$1M, SPLIT on a real pair; re-check it on the
+      Colab model), then 10,000,000,000 BONK → USDC (~$30k, SPLIT, low
+      confidence, the live-vs-model impact line). Be ready to explain both "low confidence"
       and "assumes ρ = 1".
 - [ ] If Jupiter rate limits the app ("Wait a moment and retry"), the sampler
       is still running: pause it.
@@ -543,11 +584,8 @@ unit tests.
   - the regret 2×2 and the recomputed impact table
   - TIGHTEN under the gate
   - whether the deep $1M orders start getting SPLIT
-- **The "piecewise log-log fit" doesn't exist yet.** The cost-model
-  contract allows one power law per pair, and neither the notebook nor the
-  loader has a piecewise fit. A piecewise impact needs a contract extension
-  (schema, loader, reference fit, notebook, test vectors) before a Colab
-  artifact can carry it. Raised with the user.
+- The piecewise impact fit is built end to end (2026-10-17). The final
+  Colab run needs the regenerated notebook (`notebooks/train_cost_model.ipynb`).
 - **The Docker app image predates P1.** `docker compose up --build` picks it
   up. Note that rebuilding also recreates the sampler (a few seconds' gap).
 - (Resolved in P1: Pending swaps are reconciled against devnet when the log

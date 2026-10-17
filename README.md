@@ -165,12 +165,30 @@ train/test split with deep and thin pairs reported separately:
 
 1. **Price impact is predictable from size and depth.** A power law per pair
    beats a ridge baseline on thin pairs by a wide margin (reference fit: test
-   MAE 189 vs 1,038 bps, n=986). On deep pairs, where impact is a few bps at
-   most, the two are about even.
+   MAE 182 vs 1,040 bps, n=1,026). On deep pairs, where impact is a few bps at
+   most, the two are about even (1.42 vs 1.57 bps, n=1,057).
+
+   A single power law bends too little at the top of the deep ladder,
+   though. It predicted about 3 bps for a $1M SOL order whose recorded impact
+   is about 8. So each pair may instead use a **continuous two-segment power
+   law**: a hinge in log-log space, with the knot at a rung. Whether a pair
+   gets the hinge is decided on its training rows alone, in time order. Both
+   models are fitted on the earliest 80% and scored on the latest 20%, and
+   the hinge is kept only if it wins there. (Choosing on in-sample BIC
+   instead gave hinges to the thin pairs that did worse out of sample.)
+
+   | test MAE, bps | deep (n=1,057) | thin (n=1,026) | deep, $200k and up (n=302) | thin, $200k and up (n=294) |
+   |---|---|---|---|---|
+   | single power law | 1.42 | 182.5 | 3.02 | 586.8 |
+   | **hinge where chosen (the model)** | **0.94** | **139.7** | **1.10** | **442.9** |
+
+   The hinge was chosen for SOL/USDC (knot ~$213k), SOL/USDT and USDC/SOL
+   (~$43k), JUP/USDC (~$2k) and WIF/USDC (~$10k). BONK/USDC keeps the single
+   line.
 2. **Short-horizon drift is not predictable beyond its mean at this data
    scale.** A ridge on horizon and realised volatility does *worse* out of
-   sample than predicting the training mean (reference fit: deep MAE 2.55 vs
-   2.35 bps, n=215; thin 2.54 vs 2.33 bps, n=216). This is a finding, not a
+   sample than predicting the training mean (reference fit: deep MAE 2.97 vs
+   2.75 bps, n=235; thin 2.71 vs 2.38 bps, n=228). This is a finding, not a
    gap waiting to be filled with more features: over seconds, the price moves
    about as much as it usually does, and knowing recent volatility does not
    say which way or by how much more.
@@ -248,10 +266,10 @@ worst 5%):
 
 | advisor assumes | pool recovers fully (true ρ = 1) | pool never recovers (true ρ = 0) |
 |---|---|---|
-| **ρ = 1 (shipped)** | **+168.4** (mean +1,489, worst 5% +2.4) | **−1.0** (mean −2.4, worst 5% −74.1) |
+| **ρ = 1 (shipped)** | **+168.4** (mean +1,489, worst 5% +2.4) | **−0.9** (mean −2.4, worst 5% −74.1) |
 | ρ = 0 | 0 (mean 0) | 0 (mean 0) |
 
-At the 5 bps cap the picture is the same: +167.8 against −1.2 (mean −3.2,
+At the 5 bps cap the picture is the same: +167.8 against −1.2 (mean −3.1,
 worst 5% −76.5), and the ρ = 0 row has a mean of −1.4.
 
 **The asymmetry holds.** Being wrong about ρ = 1 costs a median of about
@@ -283,9 +301,9 @@ at the pair's next recorded ladder:
 
 | cap | depth | deferred | cheaper | dearer | mean gain, bps (95% CI) | median | worst / best |
 |---|---|---|---|---|---|---|---|
-| 50 bps | deep | 0 | — | — | — | — | — |
-| 50 bps | thin | 161 | 74 | 61 | +1.4 (−7.7 to +7.1) | 0 | −96 / +50 |
-| 5 bps | thin | 172 | 77 | 66 | +1.4 (−8.1 to +7.6) | 0 | −97 / +65 |
+| 50 bps | deep | 2 | 0 | 2 | −6.3 | −6.3 | −8 / −5 |
+| 50 bps | thin | 162 | 74 | 61 | +1.2 (−7.7 to +6.7) | 0 | −96 / +50 |
+| 5 bps | thin | 174 | 78 | 66 | +1.4 (−8.1 to +7.5) | 0 | −97 / +65 |
 
 (Intervals are block bootstraps over 30-minute blocks of order time; the
 deferrals fall in only 8 such blocks.)
@@ -326,19 +344,19 @@ There, with the gate:
 
 | 5 bps cap | chosen | plans | ended unfilled | one order, same orders | mean saved, bps (95% CI) | better / worse than one order |
 |---|---|---|---|---|---|---|
-| deep | 826 of 1,092 | 2.5 bps × 3 tries (825), 3.75 × 2 (1) | 7 (0.8%) | 28 (3.4%) | −0.04 (−0.54 to +0.49) | 73 / 67 |
-| thin | 233 of 1,085 | 1.25 × 3 (162), 2.5 × 2 (70), 3.75 × 2 (1) | 10 (4.3%) | 21 (9.0%) | −0.10 (−0.97 to +0.79) | 31 / 32 |
+| deep | 678 of 1,092 | 2.5 bps × 3 tries (677), 3.75 × 2 (1) | 6 (0.9%) | 24 (3.5%) | −0.03 (−0.57 to +0.52) | 61 / 55 |
+| thin | 214 of 1,085 | 1.25 × 3 (152), 2.5 × 2 (61), 3.75 × 2 (1) | 9 (4.2%) | 21 (9.8%) | −0.10 (−1.02 to +0.88) | 29 / 30 |
 
 **It does what it is for: cost-neutral, failure-reducing where it bites.**
 Where it is chosen, it cuts orders that end unfilled by about three-quarters
-on deep pairs and by half on thin ones, and its cost is indistinguishable
-from sending one order. Unlike DEFER it stays on.
+on deep pairs and by more than half on thin ones, and its cost is
+indistinguishable from sending one order. Unlike DEFER it stays on.
 
 Three caveats:
 
-- **The gate is only as good as the predicted failure probability.** The 266
+- **The gate is only as good as the predicted failure probability.** The 190
   deep orders where the gate kept one order sit in sparse volatility cells
-  (n ≈ 20) that predict a 5 bps cap is never missed. In the backtest, 21 of
+  (n ≈ 20) that predict a 5 bps cap is never missed. In the backtest, 15 of
   them (7.9%) missed it. Those predictions are flagged low confidence.
 - **The backtest retries on recorded windows**: 0–5 s, then 5–15 s, then
   15–30 s. Later attempts therefore take 10–15 s rather than 5 s, which
@@ -386,18 +404,22 @@ TypeScript reference fit), not the Colab model, on data up to 2026-10-16
 
 | depth | ρ | mean | median | worse than control | failure rate ctl / advisor / fixed split | fees ctl / advisor | advisor's choices |
 |---|---|---|---|---|---|---|---|
-| deep | any | 0 | 0 | 0% | 0 / 0 / 0 | $2.18 / $2.18 | SEND_NOW 1,092 |
-| thin | 1.0 | 853.8 | 28.0 | 2% (27) | 0 / 0 / 0 | $2.17 / $31.02 | SPLIT 856, SEND_NOW 229 |
-| thin | 0.5 | 682.0 | 24.6 | 6% (61) | 0 / 0 / 0 | $2.17 / $34.13 | SPLIT 829, SEND_NOW 256 |
+| deep | 1.0 | 0.92 | 0 | 4% (49) | 0 / 0 / 0 | $2.18 / $4.61 | SEND_NOW 853, SPLIT 239 |
+| deep | 0.5 | 0.75 | 0 | 3% (38) | 0 / 0 / 0 | $2.18 / $5.39 | SEND_NOW 929, SPLIT 163 |
+| deep | 0.0 | 0 | 0 | 0% | 0 / 0 / 0 | $2.18 / $2.18 | SEND_NOW 1,092 |
+| thin | 1.0 | 853.8 | 28.0 | 3% (32) | 0 / 0 / 0 | $2.17 / $31.03 | SPLIT 874, SEND_NOW 211 |
+| thin | 0.5 | 681.9 | 24.6 | 6% (60) | 0 / 0 / 0 | $2.17 / $33.69 | SPLIT 825, SEND_NOW 260 |
 | thin | 0.0 | 0 | 0 | 0% | 0 / 0 / 0 | $2.17 / $2.17 | SEND_NOW 1,085 |
 
 **Cap 5 bps.** Saved bps against always-SEND_NOW:
 
 | depth | ρ | mean | median | worse than control | failure rate ctl / advisor / fixed split | advisor's choices |
 |---|---|---|---|---|---|---|
-| deep | any | −0.03 | 0 | 6% (67) | 4.5% / 2.6% / 5% | TIGHTEN_AND_RETRY 826, SEND_NOW 266 |
-| thin | 1.0 | 853.3 | 27.8 | 6% (64) | 6% / 15% / 9% | SPLIT 852, TIGHTEN_AND_RETRY 233 |
-| thin | 0.5 | 681.5 | 24.6 | 9% (97) | 6% / 17% / 9% | SPLIT 829, TIGHTEN_AND_RETRY 256 |
+| deep | 1.0 | 0.92 | 0 | 9% (100) | 4.5% / 3.2% / 5% | TIGHTEN_AND_RETRY 678, SPLIT 224, SEND_NOW 190 |
+| deep | 0.5 | 0.75 | 0 | 8% (92) | 4% / 3% / 5% | TIGHTEN_AND_RETRY 708, SPLIT 156, SEND_NOW 228 |
+| deep | 0.0 | −0.03 | 0 | 6% (67) | 4% / 3% / 5% | TIGHTEN_AND_RETRY 826, SEND_NOW 266 |
+| thin | 1.0 | 853.3 | 27.8 | 6% (65) | 6% / 15% / 9% | SPLIT 871, TIGHTEN_AND_RETRY 214 |
+| thin | 0.5 | 681.4 | 24.2 | 9% (95) | 6% / 17% / 9% | SPLIT 824, TIGHTEN_AND_RETRY 261 |
 | thin | 0.0 | −0.82 | 0 | 13% (136) | 6% / 3% / 9% | TIGHTEN_AND_RETRY 1,085 |
 
 At 5 bps a split fails more often than one order (15% against 6% on thin
@@ -407,34 +429,46 @@ completed later, on top of whatever displacement the filled portions left.
 The saving survives: the thin median at ρ = 1 is 27.8 bps at 5 bps against
 28.0 at 50.
 
-**By size, thin pairs, 50 bps cap:**
+**By size, 50 bps cap:**
 
-| size | control median, bps | saved median at ρ = 1 | breakeven ρ | advisor's choice at ρ = 1 |
-|---|---|---|---|---|
-| ~$100 | 1.8 | 0 | 0.72 | SEND_NOW 133, SPLIT 22 |
-| ~$500 | 7.7 | 5.1 | 0.27 | SPLIT 106, SEND_NOW 49 |
-| ~$2k | 15.8 | 11.6 | 0.11 | SPLIT 108, SEND_NOW 47 |
-| ~$10k | 44.8 | 33.8 | 0.061 | SPLIT 155 |
-| ~$40k | 154.2 | 129.3 | 0.012 | SPLIT 155 |
-| ~$200k | 647.9 | 608.7 | 0.003 | SPLIT 155 |
-| ~$1M | 2,570.2 | 2,421.0 | 0.001 | SPLIT 155 |
+| depth | size | one order, median bps | saved median at ρ = 1 | breakeven ρ | advisor's choice at ρ = 1 |
+|---|---|---|---|---|---|
+| deep | ~$100 to ~$40k | 0.4 to 1.0 | 0 | 0.84 or more, or never | SEND_NOW, every order |
+| deep | ~$200k | 2.5 | 0 (mean +0.23) | 0.73; never for 132 of 156 | SPLIT 83, SEND_NOW 73 |
+| deep | ~$1M | 8.9 | **6.4** | 0.32 | **SPLIT 156** |
+| thin | ~$100 | 1.8 | 0 | 0.72 | SEND_NOW 113, SPLIT 42 |
+| thin | ~$500 | 7.7 | 5.1 | 0.27 | SPLIT 106, SEND_NOW 49 |
+| thin | ~$2k | 15.8 | 10.8 | 0.11 | SPLIT 106, SEND_NOW 49 |
+| thin | ~$10k | 44.8 | 33.8 | 0.061 | SPLIT 155 |
+| thin | ~$40k | 154.2 | 129.3 | 0.012 | SPLIT 155 |
+| thin | ~$200k | 647.9 | 608.7 | 0.003 | SPLIT 155 |
+| thin | ~$1M | 2,570.2 | 2,421.0 | 0.001 | SPLIT 155 |
 
-On deep pairs the advisor sends one order at every size. Up to ~$200k that
-is right for nearly every order: a split would need ρ of 0.75 or more to pay
-for its fees and waiting. At ~$1M it is a **miss**: one order's recorded cost
-there has a median of 8.9 bps, so a split would pay for ρ above about 0.35.
-The example model predicts only about 3 bps of impact at that size, so the
-advisor never sees the saving. That costs nothing against the control, but it
-is a saving left on the table, and it comes from the model underpredicting
-deep-pair impact at the top of the ladder.
+**Deep pairs at ~$1M now get SPLIT.** Under the single power law the model
+predicted about 3 bps of impact for these orders, against 8.3 recorded, so the
+advisor sent all 156 as one order, although 154 had a finite breakeven ρ
+(median 0.35). The piecewise fit predicts 8.8 bps. The advisor now splits all
+156: 78 as 4 portions over 30 s, 21 as 6 over 60 s and 57 as 12 over 120 s.
 
-**Low confidence.** 58% of deep recommendations and **100% of thin ones**
+- **At ρ = 1** that saves a median 6.4 bps of the 8.9 one order costs, and
+  18 orders come out worse than one order.
+- **If the pool never recovers** it costs a mean of 0.25 bps.
+- **On SOL/USDC**, the pair the app really trades, recorded impact is
+  7.0 bps against 9.3 predicted, and the advisor splits 48 of 48.
+
+At ~$200k the advisor now splits 83 of 156, always as 4 portions over 30 s.
+That is a marginal call. It saves +0.4 bps where it splits, comes out worse
+than one order in 31 cases, and the recorded curves say a split never pays
+for 132 of those 156 orders at any ρ. Below ~$200k it sends one order.
+
+**Low confidence.** 60% of deep recommendations and **100% of thin ones**
 are low confidence. The causes differ:
 
-- **Deep pairs:** the gaps are data volume. 262 cells are sparse; 360 are
-  fallbacks (no per-pair +5 s cell in the training window, or a default
-  volatility); 14 are sizes beyond the sampled range.
-- **Thin pairs:** 723 of the 856 SPLIT plans are `extrapolated`, because
+- **Deep pairs:** the gaps are mostly data volume. 233 are sparse and 356
+  are fallbacks (no per-pair +5 s cell in the training window, or a default
+  volatility). 70 are extrapolated, mostly splits whose portions wait beyond
+  60 s.
+- **Thin pairs:** 737 of the 874 SPLIT plans are `extrapolated`, because
   their portions wait longer than the longest measured drift horizon (60 s).
   The rest are fallbacks: the training window ended an hour after thin-pair
   sampling began, so it has no per-pair +5 s cells. More data fixes the
@@ -496,7 +530,11 @@ npm run validate:model    # schema, self-test vectors, feature-test vectors
 ```
 
 `npm run fit:example-model` produces `models/cost-model.example.json`, a
-TypeScript reference fit of the same contract. The app and the backtest fall
+TypeScript reference fit of the same contract, using the same methods as the
+notebook. The committed example was fitted with
+`-- --until 2026-10-16T11:28:03.532Z`, the data its first version saw, so
+the single-line and piecewise versions compare on identical rows
+(`--single-power-law` gives the former). The app and the backtest fall
 back to it, labelled, when no Colab model is present. `npm run build:notebook`
 regenerates the notebook from `scripts/build-notebook.mjs`.
 
@@ -551,7 +589,10 @@ npm run dev
    transaction. Each wallet can be funded once every 10 minutes.
 3. Pick a pair and enter an amount. The quote, route and price impact come
    from mainnet, and the advice panel prices the alternatives. To see a
-   split recommended, try 10,000,000,000 BONK → USDC (about $30k).
+   split recommended on a real pair, try 10,000 SOL → USDC (about $1M):
+   4 portions over 30 s, predicted at about 4 bps against 10 bps as one
+   order. On a stand-in pair, try 10,000,000,000 BONK → USDC (about $30k).
+   (The quote and the advice do not need the balance; the swap does.)
 4. **Swap**. The receipt shows quoted against delivered, the simulated-fill
    badge and the signature.
 5. Click the signature to open the transaction on Solscan devnet, where both
@@ -628,6 +669,10 @@ under the tab.
   shipped advisor assumes ρ = 1 on the regret argument above.
 - **Drift is measured to 60 s.** Longer waits (most thin-pair splits) are
   extrapolated, and say so.
+- **One knot at most.** The piecewise impact fit allows a single breakpoint,
+  at a rung. It is chosen on a validation slice of short training windows
+  (about an hour of thin-pair data in the example), so its knots are
+  provisional.
 - **Naive on-chain execution.** Impact is what one Jupiter-routed AMM swap
   would pay. RFQ, OTC and centralised venues are out of scope.
 - **The example artifact.** Until the Colab model is at

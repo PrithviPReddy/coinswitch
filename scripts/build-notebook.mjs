@@ -22,7 +22,7 @@ Fits the three targets of the cost model from the mainnet quote dataset the Coin
 
 | Target | Model | Data |
 |---|---|---|
-| (a) price impact, bps, by pair and size | power law per pair (OLS in log space); ridge baseline | QuoteSample ladders |
+| (a) price impact, bps, by pair and size | power law per pair (OLS in log space), or a continuous two-segment power law where a time-ordered validation slice of the training data prefers it; ridge baseline | QuoteSample ladders |
 | (b) expected adverse drift over horizon T, bps | ridge on [sqrt T, volatility x sqrt(T/60), thin x sqrt T]; train-mean baseline | QuoteDrift |
 | (c) P(drift over T exceeds the cap) | empirical exceedance from 101-point quantiles | QuoteDrift |
 
@@ -323,20 +323,93 @@ def fit_power_law(notional, impact):
     return {"a": float(10 ** (my - b * mx)), "b": float(b), "n": int(len(x)),
             "notionalMinUsd": float(notional.min()), "notionalMaxUsd": float(notional.max())}
 
+VALIDATION_FRACTION = 0.8   # share of the training rows, earliest first, the single-or-hinge choice is fitted on
+IMPACT_TAIL_USD = 200_000
+
+def fit_piecewise(notional, impact, rung):
+    """A continuous hinge in log10 space, the same as the TypeScript reference fit:
+       log10 I = c + b1 u + (b2 - b1) max(0, u - k),  u = log10(N/1000),
+    with the knot k at one rung's median u (least squared error wins) and at least
+    MIN_CONFIDENT_N fitted rows on each side. Returns the contract's segments, or None."""
+    mask = (impact > IMPACT_FLOOR_BPS) & (notional > 0)
+    u = np.log10(notional[mask] / 1000.0)
+    y = np.log10(impact[mask])
+    r = rung[mask]
+    N = len(u)
+    if N < 2 * MIN_CONFIDENT_N:
+        return None
+    best = None
+    for g in sorted(set(int(x) for x in r)):
+        us = np.sort(u[r == g])
+        k = us[len(us) // 2]
+        below = int((u <= k).sum())
+        if below < MIN_CONFIDENT_N or N - below < MIN_CONFIDENT_N:
+            continue
+        X = np.column_stack([np.ones(N), u, np.maximum(0.0, u - k)])
+        beta = np.linalg.lstsq(X, y, rcond=None)[0]
+        sse = float(((y - X @ beta) ** 2).sum())
+        if np.all(np.isfinite(beta)) and (best is None or sse < best[2]):
+            best = (float(k), beta, sse)
+    if best is None:
+        return None
+    k, beta, _ = best
+    c, b1, d = float(beta[0]), float(beta[1]), float(beta[2])
+    below = int((u <= k).sum())
+    return [{"fromUsd": 0.0, "a": float(10 ** c), "b": b1, "n": below},
+            {"fromUsd": float(1000.0 * 10 ** k), "a": float(10 ** (c - d * k)), "b": b1 + d, "n": int(N - below)}]
+
+def line_value(p, n):
+    a, b = p["a"], p["b"]
+    for seg in p.get("segments") or []:
+        if seg["fromUsd"] <= n:
+            a, b = seg["a"], seg["b"]
+    return 0.0 if n <= BASELINE_NOTIONAL_USD else max(0.0, a * (n / 1000.0) ** b)
+
+def select_impact_fit(g):
+    """Single line or hinge, decided on the TRAINING rows alone, in time order: both are
+    fitted on the earliest VALIDATION_FRACTION and scored (MAE in bps, every row) on the
+    rest. The hinge is kept, refitted on all training rows, only if it won. The test
+    split is never consulted. (In-sample BIC picked hinges that did worse out of sample.)"""
+    notional = g["notionalUsd"].values.astype(float)
+    impact = g["measuredImpactBps"].values.astype(float)
+    rung = g["ladderRung"].values.astype(int)
+    t = g["t"].values
+    single = fit_power_law(notional, impact)
+    if single is None:
+        return None
+    ts = np.sort(t)
+    cut = ts[int(math.floor(VALIDATION_FRACTION * (len(ts) - 1)))]
+    early, late = t < cut, t >= cut
+    if not early.any() or not late.any():
+        return single
+    early_single = fit_power_law(notional[early], impact[early])
+    early_segments = fit_piecewise(notional[early], impact[early], rung[early])
+    if early_single is None or early_segments is None:
+        return single
+    def mae(p):
+        return float(np.mean([abs(line_value(p, n) - y) for n, y in zip(notional[late], impact[late])]))
+    if not mae({**early_single, "segments": early_segments}) < mae(early_single):
+        return single
+    segments = fit_piecewise(notional, impact, rung)
+    return {**single, "segments": segments} if segments else single
+
 per_pair = {}
 for pair in PAIRS:
-    g = imp_train[imp_train["pair"] == pair]
-    fit = fit_power_law(g["notionalUsd"].values, g["measuredImpactBps"].values)
+    fit = select_impact_fit(imp_train[imp_train["pair"] == pair])
     if fit:
         per_pair[pair] = fit
 by_depth = {}
 for depth in ["deep", "thin"]:
-    g = imp_train[imp_train["depth"] == depth]
-    fit = fit_power_law(g["notionalUsd"].values, g["measuredImpactBps"].values)
+    fit = select_impact_fit(imp_train[imp_train["depth"] == depth])
     if fit:
         by_depth[depth] = fit
 for pair, f in per_pair.items():
-    print(f"{pair:10s} impact = {f['a']:.4g} x (N/1000)^{f['b']:.3f}   n={f['n']}  data range USD {f['notionalMinUsd']:,.0f}..{f['notionalMaxUsd']:,.0f}")
+    print(f"{pair:10s} single: impact = {f['a']:.4g} x (N/1000)^{f['b']:.3f}   n={f['n']}  data range USD {f['notionalMinUsd']:,.0f}..{f['notionalMaxUsd']:,.0f}")
+    if f.get("segments"):
+        for seg in f["segments"]:
+            print(f"{'':10s}   from USD {seg['fromUsd']:>12,.0f}: {seg['a']:.4g} x (N/1000)^{seg['b']:.3f}   n={seg['n']}")
+    else:
+        print(f"{'':10s}   single line kept (the hinge did not win on the validation slice)")
 
 def standardise(train_X, X):
     means = train_X.mean(axis=0)
@@ -445,12 +518,16 @@ def predict_impact(m, pair, N):
     params = own if own is not None else m["impact"]["byDepth"].get(depth_of(pair))
     if params is None:
         return 0.0, "none"
-    value = 0.0 if N <= m["impact"]["baselineNotionalUsd"] else max(0.0, params["a"] * math.pow(N / 1000.0, params["b"]))
+    line = params["segments"][0] if params.get("segments") else params
+    for seg in params.get("segments") or []:
+        if seg["fromUsd"] <= N:
+            line = seg
+    value = 0.0 if N <= m["impact"]["baselineNotionalUsd"] else max(0.0, line["a"] * math.pow(N / 1000.0, line["b"]))
     if own is None or reversed_:
         cov = "fallback"
     elif N < params["notionalMinUsd"] or N > params["notionalMaxUsd"]:
         cov = "extrapolated"
-    elif params["n"] < m["constants"]["minConfidentN"]:
+    elif line["n"] < m["constants"]["minConfidentN"]:
         cov = "sparse"
     else:
         cov = "ok"
@@ -592,8 +669,24 @@ def by_depth_metrics(frame, pred):
     return out
 
 imp_pred = [predict_impact(model, p, n)[0] for p, n in zip(imp_test["pair"], imp_test["notionalUsd"])]
+# The single line on the same rows, for comparison with the piecewise fit.
+import copy
+single_only = copy.deepcopy(model)
+for p in list(single_only["impact"]["perPair"].values()) + list(single_only["impact"]["byDepth"].values()):
+    p.pop("segments", None)
+imp_pred_single = [predict_impact(single_only, p, n)[0] for p, n in zip(imp_test["pair"], imp_test["notionalUsd"])]
 model["metrics"]["impact"] = {"powerLaw": by_depth_metrics(imp_test, imp_pred),
+                              "powerLawSingle": by_depth_metrics(imp_test, imp_pred_single),
                               "ridgeBaseline": by_depth_metrics(imp_test, impact_ridge.predict(Zte) if len(imp_test) else [])}
+# The tail, where a single line is most likely to be wrong.
+tail_mask = (imp_test["notionalUsd"].values >= IMPACT_TAIL_USD)
+imp_tail = imp_test[tail_mask]
+model["metrics"]["impactTail200k"] = {"powerLaw": by_depth_metrics(imp_tail, np.asarray(imp_pred, dtype=float)[tail_mask]),
+                                      "powerLawSingle": by_depth_metrics(imp_tail, np.asarray(imp_pred_single, dtype=float)[tail_mask])}
+for depth in ["deep", "thin"]:
+    a_, s_ = model["metrics"]["impact"]["powerLaw"][depth], model["metrics"]["impact"]["powerLawSingle"][depth]
+    at_, st_ = model["metrics"]["impactTail200k"]["powerLaw"][depth], model["metrics"]["impactTail200k"]["powerLawSingle"][depth]
+    print(f"{depth}: impact test MAE {a_['mae']} (model) vs {s_['mae']} (single line), n={a_['n']};  at USD 200k and up: {at_['mae']} vs {st_['mae']}, n={at_['n']}")
 
 d_test = d_test.copy()
 d_test["_y"] = np.maximum(0.0, d_test["driftBps"].values)

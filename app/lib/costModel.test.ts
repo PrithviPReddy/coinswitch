@@ -10,6 +10,7 @@ import {
   predictFailure,
   predictImpact,
   resolvePair,
+  segmentProblems,
   validateCostModel,
   type CostModel,
 } from "./costModel";
@@ -96,6 +97,57 @@ describe("predictImpact", () => {
   });
 });
 
+describe("predictImpact with a piecewise power law", () => {
+  // 10 (N/1000)^1 up to $100k, then steeper: 1 (N/1000)^1.5, which meets it at $100k (1,000 bps).
+  const piecewise = () => {
+    const m = fixture();
+    m.impact.perPair["BONK/USDC"].segments = [
+      { fromUsd: 0, a: 10, b: 1, n: 100 },
+      { fromUsd: 100_000, a: 1, b: 1.5, n: 40 },
+    ];
+    return m;
+  };
+
+  it("prices each size on its own segment, continuously across the breakpoint", () => {
+    const m = piecewise();
+    expect(predictImpact(m, "BONK/USDC", 10_000).value).toBeCloseTo(100, 9);
+    expect(predictImpact(m, "BONK/USDC", 400_000).value).toBeCloseTo(8_000, 6);
+    expect(predictImpact(m, "BONK/USDC", 100_000).value).toBeCloseTo(1_000, 9);
+    expect(predictImpact(m, "BONK/USDC", 99_999).value).toBeCloseTo(999.99, 2);
+    expect(predictImpact(m, "BONK/USDC", 25).value).toBe(0);
+  });
+
+  it("ignores the single-line (a, b) when segments are present", () => {
+    const m = piecewise();
+    m.impact.perPair["BONK/USDC"].a = 999;
+    expect(predictImpact(m, "BONK/USDC", 10_000).value).toBeCloseTo(100, 9);
+  });
+
+  it("calls a prediction sparse when its own segment is thin", () => {
+    const m = piecewise();
+    m.impact.perPair["BONK/USDC"].segments![1].n = 10;
+    expect(predictImpact(m, "BONK/USDC", 10_000).coverage).toBe("ok");
+    expect(predictImpact(m, "BONK/USDC", 400_000).coverage).toBe("sparse");
+  });
+
+  it("accepts continuous segments and rejects broken ones", () => {
+    const m = piecewise();
+    expect(segmentProblems("x", m.impact.perPair["BONK/USDC"])).toEqual([]);
+
+    const jump = piecewise();
+    jump.impact.perPair["BONK/USDC"].segments![1].a = 1.1;
+    expect(segmentProblems("x", jump.impact.perPair["BONK/USDC"]).join()).toMatch(/must be continuous/);
+
+    const late = piecewise();
+    late.impact.perPair["BONK/USDC"].segments![0].fromUsd = 25;
+    expect(segmentProblems("x", late.impact.perPair["BONK/USDC"]).join()).toMatch(/fromUsd must be 0/);
+
+    const order = piecewise();
+    order.impact.perPair["BONK/USDC"].segments!.reverse();
+    expect(segmentProblems("x", order.impact.perPair["BONK/USDC"]).join()).toMatch(/must be 0|ascending/);
+  });
+});
+
 describe("predictDriftAdverse", () => {
   const m = fixture();
   it("evaluates the ridge on standardised features, floored at 0", () => {
@@ -176,6 +228,23 @@ describe("validateCostModel", () => {
     const result = validateCostModel(JSON.parse(JSON.stringify(m)), schema);
     expect(result.errors).toEqual([]);
     expect(result.ok).toBe(true);
+  });
+
+  it("validates a piecewise artifact, and refuses one whose segments break", async () => {
+    const m = withVectors();
+    m.impact.perPair["BONK/USDC"].segments = [
+      { fromUsd: 0, a: 10, b: 1, n: 100 },
+      { fromUsd: 100_000, a: 1, b: 1.5, n: 40 },
+    ];
+    for (const v of m.selfTestVectors) v.expected = predict(m, v.input);
+    const { realisedVolatility } = await import("./fillModel");
+    for (const f of m.featureTestVectors) f.expectedVol = realisedVolatility(f.series.map(([t, price]) => ({ t, price })), f.atMs);
+    expect(validateCostModel(JSON.parse(JSON.stringify(m)), schema).errors).toEqual([]);
+
+    m.impact.perPair["BONK/USDC"].segments[1].a = 2;
+    const broken = validateCostModel(JSON.parse(JSON.stringify(m)), schema);
+    expect(broken.ok).toBe(false);
+    expect(broken.errors.join("\n")).toMatch(/must be continuous/);
   });
 
   it("catches a self test that the TypeScript path disagrees with: train/serve skew", () => {
