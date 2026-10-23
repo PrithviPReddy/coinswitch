@@ -100,7 +100,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["model", "baselineNotionalUsd", "perPair", "byDepth", "cells"],
-      "description": "impactBps(pair, N): params = perPair[pair], else byDepth[depth(pair)] (coverage 'fallback'). If N <= baselineNotionalUsd the result is 0. Otherwise a * (N / 1000) ^ b, floored at 0. Coverage: no params -> 'none'; fallback -> 'fallback'; N outside [notionalMinUsd, notionalMaxUsd], the notional range of ALL the pair's training rows (not only those above the floor) -> 'extrapolated'; n < minConfidentN -> 'sparse'; else 'ok', checked in that order. A pair not sampled in either direction uses byDepth.",
+      "description": "impactBps(pair, N): params = perPair[pair], else byDepth[depth(pair)] (coverage 'fallback'). If N <= baselineNotionalUsd the result is 0. Otherwise, with params.segments present, the segment used is the last one whose fromUsd <= N and the result is segment.a * (N / 1000) ^ segment.b, floored at 0; without segments it is a * (N / 1000) ^ b, floored at 0. Coverage: no params -> 'none'; fallback -> 'fallback'; N outside [notionalMinUsd, notionalMaxUsd], the notional range of ALL the pair's training rows (not only those above the floor) -> 'extrapolated'; n < minConfidentN, where n is the segment's when segments are used -> 'sparse'; else 'ok', checked in that order. A pair not sampled in either direction uses byDepth.",
       "properties": {
         "model": { "const": "powerlaw" },
         "baselineNotionalUsd": { "type": "number", "minimum": 0 },
@@ -280,12 +280,30 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["a", "b", "n", "notionalMinUsd", "notionalMaxUsd"],
+      "description": "impact = a (N/1000)^b, OLS in log10 space on training rows above the impact floor. Optionally a continuous piecewise power law (segments) fitted on the same rows: when present it is the prediction, and (a, b) remain the single-line fit, for comparison.",
       "properties": {
         "a": { "type": "number", "minimum": 0 },
         "b": { "type": "number" },
         "n": { "type": "integer", "minimum": 0 },
         "notionalMinUsd": { "type": "number" },
-        "notionalMaxUsd": { "type": "number" }
+        "notionalMaxUsd": { "type": "number" },
+        "segments": {
+          "type": "array",
+          "minItems": 2,
+          "description": "Ascending fromUsd. segments[0].fromUsd is 0; each later fromUsd is a breakpoint, and adjacent segments agree there (relative difference under 1e-6). n is the number of fitted rows in the segment. Fitted as a continuous hinge in log10 space with the breakpoint at a rung notional, and kept only when it beats the single line on BIC.",
+          "items": { "$ref": "#/$defs/powerLawSegment" }
+        }
+      }
+    },
+    "powerLawSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromUsd", "a", "b", "n"],
+      "properties": {
+        "fromUsd": { "type": "number", "minimum": 0 },
+        "a": { "type": "number", "minimum": 0 },
+        "b": { "type": "number" },
+        "n": { "type": "integer", "minimum": 0 }
       }
     },
     "metric": {

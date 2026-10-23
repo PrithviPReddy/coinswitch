@@ -459,6 +459,8 @@ type Order = {
   /** DEFER switched on, at rho = 1: the deferred plan and the same plan done at once. */
   deferExperiment: { deferred: Realised; immediate: Realised } | null;
   breakevenRho: number | "never" | null;
+  /** Impact of the whole order on its ladder's recorded curve, bps (not in orders.csv). */
+  recordedImpactBps: number;
 };
 
 type Data = Awaited<ReturnType<typeof loadData>>;
@@ -531,7 +533,7 @@ function runCap(cap: number, model: CostModel, index: ReturnType<typeof buildInd
 
         orders.push({
           id: `${ladder.id}:${rung}`, pair, depth: depthOf(pair), notional, bucket: sizeBucket(notional), t: ladder.t, volatility,
-          control, fixed, advisor, regret, deferExperiment, breakevenRho,
+          control, fixed, advisor, regret, deferExperiment, breakevenRho, recordedImpactBps: curve(notional),
         });
       }
     }
@@ -682,7 +684,31 @@ function summariseCap(cap: number, orders: Order[]) {
     },
   };
 
-  return { cap, byDepthRho, bySize, regret, coverage, tighten, deferExperiment, verdict };
+  // Watch: deep pairs at ~$1M, where the impact model's tail decides whether
+  // a split is ever recommended on a pair the app really trades.
+  const watchOrders = orders.filter((o) => o.depth === "deep" && o.bucket === "~$1M");
+  const finite = watchOrders.map((o) => o.breakevenRho).filter((x): x is number => typeof x === "number");
+  const deepMillion = {
+    n: watchOrders.length,
+    finiteBreakeven: finite.length,
+    breakevenRhoMedian: finite.length ? Math.round(pct(finite, 0.5) * 1000) / 1000 : null,
+    controlMedianBps: r2(pct(watchOrders.map((o) => o.control.bps), 0.5)),
+    recordedImpactMedianBps: r2(pct(watchOrders.map((o) => o.recordedImpactBps), 0.5)),
+    predictedImpactMedianBps: r2(pct(watchOrders.map((o) => o.advisor[1].advice.byMode.SEND_NOW.cost.impactBps), 0.5)),
+    splitChosenRho1: watchOrders.filter((o) => o.advisor[1].advice.mode === "SPLIT").length,
+    modesRho1: Object.entries(countBy(watchOrders, (o) => o.advisor[1].advice.mode)).map(([m, c]) => `${m} ${c}`).join(", "),
+    byPair: Object.entries(countBy(watchOrders, (o) => o.pair)).map(([pair, n]) => {
+      const os = watchOrders.filter((o) => o.pair === pair);
+      return {
+        pair, n,
+        recordedImpactMedianBps: r2(pct(os.map((o) => o.recordedImpactBps), 0.5)),
+        predictedImpactMedianBps: r2(pct(os.map((o) => o.advisor[1].advice.byMode.SEND_NOW.cost.impactBps), 0.5)),
+        splitChosenRho1: os.filter((o) => o.advisor[1].advice.mode === "SPLIT").length,
+      };
+    }),
+  };
+
+  return { cap, byDepthRho, bySize, regret, coverage, tighten, deferExperiment, verdict, deepMillion };
 }
 
 function writeCap(dir: string, cap: number, orders: Order[], summary: ReturnType<typeof summariseCap>, meta: Record<string, unknown>) {
@@ -812,7 +838,17 @@ function report(meta: { modelVersion: string; producer: string; exampleOnly: boo
     );
     L.push(...table(c.coverage, [["depth", "depth"], ["mode", "chosen mode"], ["n", "n"], ["ok", "ok"], ["sparse", "sparse"], ["fallback", "fallback"], ["extrapolated", "extrapolated"], ["none", "none"], ["lowConfidenceShare", "low confidence"]]), "");
 
-    L.push(`### TIGHTEN_AND_RETRY`, "");
+    const w = c.deepMillion;
+    L.push(`### Watch: deep pairs at ~$1M`, "");
+    L.push(
+      `${w.n} orders; ${w.finiteBreakeven} have a finite breakeven rho (median ${w.breakevenRhoMedian}). One order's recorded cost: median ${w.controlMedianBps} bps. ` +
+        `Impact, recorded ${w.recordedImpactMedianBps} bps against ${w.predictedImpactMedianBps} predicted. ` +
+        `**The advisor chooses SPLIT for ${w.splitChosenRho1} of ${w.n}** at rho = 1 (${w.modesRho1}).`,
+      "",
+    );
+    L.push(...table(w.byPair, [["pair", "pair"], ["n", "n"], ["recordedImpactMedianBps", "recorded impact median bps"], ["predictedImpactMedianBps", "predicted"], ["splitChosenRho1", "SPLIT chosen, rho = 1"]]), "");
+
+    L.push(`### TIGHTEN_AND_RETRY (offered only when it materially improves predicted fill probability)`, "");
     L.push(...table(c.tighten, [["depth", "depth"], ["chosen", "chosen"], ["ofOrders", "of orders"], ["medianSaved", "median saved bps"], ["meanSaved", "mean saved"], ["meanSavedCI", "mean, 95% CI"], ["beatControl", "beat control"], ["worseThanControl", "worse than control"], ["failRate", "its failure rate"], ["controlFailRateSameOrders", "control failure rate, same orders"]]), "");
 
     L.push(`### DEFER, switched on as an experiment (off in the shipped advisor)`, "");

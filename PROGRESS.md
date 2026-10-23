@@ -447,16 +447,172 @@ unit tests.
   - the full-width log
   - /api/advice rejects bad input with 400s
 
+### After the backtest review (2026-10-16/17)
+- **TIGHTEN_AND_RETRY is gated on fill probability.** It is eligible only
+  if its predicted probability of ending unfilled is at least 1 percentage
+  point below one order's at the user's cap, and at most half of it
+  (`tightenMinFillGain` 0.01, `tightenMaxFailureShare` 0.5). Cost then
+  decides among eligible plans. 30 advisor tests.
+  - **Why cost alone was wrong:** the prediction charges execution drift
+    only for the attempt that fills, so a tight cap looks as if it dodges
+    adverse moves. A rejected attempt does not undo the move.
+  - That is how 1.25 bps × 2 tries was chosen for 899 of 1,092 deep orders
+    at cap 5, although its predicted unfilled rate (8.4%) was above one
+    order's (2.5%). The predicted cost of tightened plans is still
+    optimistic; this is documented as a limitation.
+- **Backtest retry bug fixed.** Retries interpolated the drift path, so
+  attempts 2 and 3 were identical halves of the 5–15 s move. They now use
+  the recorded windows (0–5, 5–15, 15–30 s), and a missing window is never
+  invented.
+  - Recorded consecutive windows are close to independent: correlation
+    0.04 deep, −0.03 thin, n ≈ 150 held-out paths each.
+- **Result at cap 5, gated, recorded windows:**
+  - Deep: chosen for 826 of 1,092 orders (2.5 bps × 3 tries). Unfilled 7
+    (0.8%) against 28 (3.4%) for one order on the same orders; cost −0.04
+    bps (CI −0.54 to +0.49).
+  - Thin: chosen for 233 orders. Unfilled 10 (4.3%) against 21 (9.0%);
+    cost −0.10 bps (CI −0.97 to +0.79).
+  - The advisor is worse than the control on 6% of deep orders (was 15%).
+    The earlier "4.5% → 4.4%" came from the ungated plan plus the
+    interpolation bug.
+  - **Gap:** the 266 deep orders the gate kept as SEND_NOW sit in sparse
+    volatility cells (n ≈ 20) that predict a 5 bps cap is never missed.
+    21 of them (7.9%) missed it.
+  - TIGHTEN stays on, reported as a fill-reliability mechanism.
+- **Deep $1M watch block** in the backtest report (README and summary.json
+  only; `orders.csv` is byte-identical):
+  - Example artifact: 156 orders, 154 with a finite breakeven ρ (median
+    0.348). One order's cost has a median of 8.88 bps.
+  - Impact is recorded at 8.34 bps against 3.16 predicted, and the advisor
+    chooses SPLIT for 0 of 156.
+  - Report whether this changes after the final fit.
+- The README discloses where the backtest interpolates: impact between
+  rungs, and drift between horizons for split portions.
+- **Outage:** Docker Desktop quit at 17:59 UTC on 2026-10-16. Postgres had
+  no restart policy, so the sampler had no database until 18:43:57 UTC
+  (**~45 min of data lost**). Docker was restarted and Postgres given
+  `restart: unless-stopped` (compose file, plus `docker update` on the
+  running container). `caffeinate` was re-armed on the new backend PID.
+
+### Piecewise impact fit (2026-10-17)
+- **Contract:** an optional `segments` on each power law: a continuous
+  piecewise power law, ascending `fromUsd` from 0, checked for continuity
+  at each breakpoint. Old artifacts stay valid. Prediction and sparse
+  coverage use the segment that prices N. 5 new loader tests (148 in all).
+- **Fit** (TS reference and notebook, the same method): a hinge in log10
+  space with the knot at a rung's median, least squares, at least 30 rows
+  per side.
+  - Single line or hinge is **chosen on the training rows alone**, in time
+    order: fit both on the earliest 80% and keep the hinge only if it wins
+    on the latest 20% (MAE, bps). The test split is never used.
+  - The first version chose by in-sample BIC; that gave thin pairs hinges
+    that did worse on test (220 vs 182 bps).
+- `fit:example-model` takes `--until`, `--out` and `--single-power-law`.
+  With `--until 2026-10-16T11:28:03.532Z --single-power-law` it reproduces
+  the old example exactly (same rows, cutoff, parameters and content hash
+  c1df57e7).
+- **Example refitted on the same data** (`example-cost-20261017T0050Z-34ceabdb`).
+  Test MAE:
+  - deep 0.94 vs 1.42 bps single (n=1,057); ≥$200k 1.10 vs 3.02 (n=302)
+  - thin 139.7 vs 182.5 (n=1,026); ≥$200k 442.9 vs 586.8 (n=294)
+  - Hinges for SOL/USDC (~$213k), SOL/USDT and USDC/SOL (~$43k), JUP
+    (~$2k) and WIF (~$10k). BONK keeps the single line.
+- **Deep $1M flips to SPLIT:**
+  - predicted impact 8.78 bps vs 8.34 recorded (was 3.16)
+  - SPLIT for 156 of 156 at ρ = 1, saving a median 6.4 bps of 8.9, worse
+    than one order in 18; mean −0.25 bps if the pool never recovers
+  - SOL/USDC 48 of 48
+  - The app: 10,000 SOL → USDC is advised 4 × 30 s at ~4 bps vs ~10 sent
+    whole.
+- **Side effect at deep ~$200k:** 83 of 156 split (4 × 30 s), +0.4 bps where
+  split, 31 worse; the recorded curves say a split never pays for 132 of
+  them. Marginal, reported.
+- Backtest re-run (pinned, `--until 2026-10-16T14:25:00Z`). README results,
+  model findings (the drift figures were stale: now 2.97 vs 2.75 deep,
+  2.71 vs 2.38 thin) and the demo path updated.
+- **The notebook's Python was not run here** (no Python on this machine).
+  It mirrors the TS line by line; `validate:model`'s self-test vectors
+  check its inference against TypeScript when the artifact comes back.
+
+### Collection, 16-23 October
+- Totals on 2026-10-23 07:40 UTC: **30,159 quote samples and 6,287 drift
+  rows**, about double the 16th.
+- **After the 16th, collection was fragmentary.** Between 16 Oct 14:25 and
+  23 Oct 07:39 UTC the sampler recorded in about 21 hours out of 161:
+  - long gaps of 4 to 41 hours;
+  - between them, short bursts about every 1.3 h, which look like the Mac's
+    dark wakes while asleep;
+  - Docker Desktop quit at 14:24 UTC on the 21st, giving the longest gap
+    (41.3 h).
+  - It was restarted on 2026-10-23 07:38 UTC; Postgres and the sampler came
+    back on their own. `caffeinate -w` doesn't prevent lid-close sleep.
+- **Consequence for the final fit:** the extra data spans several days,
+  which helps with "one regime". But much of it is short bursts.
+  - Realised volatility needs 8 returns within 30 minutes, so rows at the
+    start of a burst get no volatility and fall back.
+  - Expect more `fallback` coverage on drift than continuous collection
+    would give.
+
+### Final run on the Colab model (2026-10-23)
+- **Model:** `cost-20261023T0821Z-33e5b1ec` (models/cost-model.json).
+  - Trained on 30,546 samples and 6,371 drift rows to 23 Oct 07:53 UTC; split
+    at 17 Oct 11:00 UTC.
+  - `validate:model` passes: schema, 13/13 self tests, 5/5 feature tests.
+  - The app serves it (example=false).
+- **First Colab run broke twice in the notebook, both fixed:**
+  1. Cell 13: a NameError, because cell 10 had not run. Cell 13 now names
+     the missing cell.
+  2. Cell 9: an overflow, from a hinge knot at the top rung. Knots now need a
+     rung on each side, and implausible fits are skipped.
+- **Impact, test MAE:**
+  - deep 1.15 (piecewise) vs 1.40 (single) vs 1.97 (ridge), n=3,594
+  - thin 131.9 vs 170.6 vs 1,011.7, n=3,490
+  - ≥$200k: deep 1.45 vs 2.75, thin 426.6 vs 555.1
+  - Gradient-boosted trees: deep 0.86 (better), thin 600.7 (far worse).
+  - Hinges for the three SOL pairs (~$42k), JUP ($2k) and WIF ($40k);
+    BONK keeps the single line.
+- **Drift finding changed:** the ridge now beats the train mean on MAE (deep
+  1.83 vs 2.02, n=371; thin 3.39 vs 3.76, n=345). Thin RMSE is a tie
+  (17.00 vs 16.98). The README now says "a modest signal about size",
+  replacing "not predictable beyond its mean".
+- **Backtest** (`--until 2026-10-23T07:53:50.433Z`, 1,750 held-out orders
+  per cap: 994 deep, 756 thin):
+  - Regret 2×2 (thin ≥$10k, n=432, cap 50): +201.9 / −0.7 (worst 5% −25.9);
+    ρ = 0 row 0. The asymmetry holds; ρ = 1 stays.
+  - **Deep $1M: SPLIT 142 of 142.** Predicted impact 7.96 vs 7.87 recorded,
+    saving a median 6.8 of 7.9 bps, 8 worse than one order. SOL/USDC 43 of
+    43. The app advises 10,000 SOL → USDC as 6 × 60 s at 4.8 vs 7.6 bps.
+  - Deep $200k: 134 of 142 split, a marginal call (median +1.1, 28 worse).
+  - **Low confidence: thin 83% (was 100%)**, deep 60%. 529 of 630 thin
+    SPLIT plans are extrapolated beyond the 60 s horizon.
+  - **TIGHTEN (cap 5):**
+    - thin: 98 chosen, unfilled 1 vs 4, cost +0.50 (CI −0.29 to +1.80)
+    - **deep: 504 chosen, unfilled 23 vs 10.** 11 of the 23 are missing
+      recorded windows (counted failed); 12 are USDC/SOL at 1.25 bps × 3.
+    - The deep benefit did not replicate. Reported as mixed.
+  - **DEFER:** never triggered on the Colab model. Only 637 of 994 deep
+    and 399 of 756 thin orders had a known volatility.
+- The Colab outputs (figures, impact table, drift coverage, directional
+  test) were copied to `reports/model/`. The zip they came in is in
+  `models/` and not committed.
+- The example was regenerated with the knot guard; only legacy USDT/SOL
+  changed.
+
 ## Demo-day checklist (add to it as things come up)
 
-- [ ] `docker compose up --build`: the app image predates P1.
-- [ ] `npm run build:fill-model`, then commit the artifact version used
+- [ ] Docker Desktop running, and `docker compose ps` shows postgres and
+      sampler up. (It has quit twice; both now restart with it.)
+- [ ] For continuous collection the Mac must not sleep: lid open on power,
+      or sleep disabled in settings. `caffeinate` alone did not hold it.
+- [x] App image rebuilt and container recreated (2026-10-23; `docker compose build app`, then
+      `up -d --no-deps app` so the stopped sampler stays stopped). Serves the Colab model.
+- [x] Fill model rebuilt from the full week (`fill-q-20261023T0833Z-be9f5fce`), committed;
+      rebuild again if the demo is more than 12 h after the last collection. Was:
+      `npm run build:fill-model`, then commit the artifact version used
       (the startup log prints the version and its age, and warns over 12 h).
-- [ ] Put the final Colab `cost-model.json` at `models/cost-model.json` and
-      run `npm run validate:model`. The advice panel must **not** say
-      "example artifact" (the startup log names the model it serves).
-- [ ] Re-run `npm run backtest -- --until <time>` on the Colab model and
-      commit `reports/backtest/`; update the README's result tables.
+- [x] Colab model at `models/cost-model.json`, validated, served (no
+      "example artifact" label).
+- [x] Backtest re-run on the Colab model, committed; README updated.
 - [ ] `npm run sampler:pause`, unless the dedicated key has arrived.
 - [ ] Confirm the vault holds enough of all six tokens for the planned
       trades. `npm run setup:devnet` restocks tokens to about $5M each, but
@@ -464,6 +620,7 @@ unit tests.
 - [ ] Have one settled thin-pair swap already open in a Solscan tab, as a
       fallback.
 - [ ] Rehearse the advice panel: SOL → USDC small (SEND_NOW), then
+      10,000 SOL → USDC (~$1M, SPLIT 6 × 60 s on a real pair), then
       10,000,000,000 BONK → USDC (~$30k, SPLIT, low confidence, the
       live-vs-model impact line). Be ready to explain both "low confidence"
       and "assumes ρ = 1".
@@ -472,6 +629,11 @@ unit tests.
 - [ ] Afterwards: `npm run sampler:resume`.
 
 ## In progress
+
+- **Sampler stopped on request, 2026-10-23 08:30 UTC** (`npm run sampler:pause`).
+  Final counts: 31,365 quote samples, 6,558 drift rows. The `caffeinate` that
+  kept the Mac awake for it was ended too. Postgres keeps running for the app.
+  `npm run sampler:resume` restarts collection; the notes below are historical.
 
 - **Sampler v2 running in Docker** since 2026-10-16 08:29:15 UTC.
   - **Pause for the live demo** (required until the sampler has its own key):
@@ -486,9 +648,16 @@ unit tests.
 
 ## Blocked / open
 
-- **Waiting on the final Colab fit.** Then: validate, both backtest runs,
-  the low-confidence change (thin will likely stay near 100% from the 60 s
-  horizon alone), the regret 2×2 and the recomputed impact table.
+- (Done 2026-10-23.) The final Colab fit, reported:
+  - validation
+  - both backtest runs
+  - the low-confidence change (thin will likely stay near 100% from the
+    60 s horizon alone)
+  - the regret 2×2 and the recomputed impact table
+  - TIGHTEN under the gate
+  - whether the deep $1M orders start getting SPLIT
+- The piecewise impact fit is built end to end (2026-10-17). The final
+  Colab run needs the regenerated notebook (`notebooks/train_cost_model.ipynb`).
 - **The Docker app image predates P1.** `docker compose up --build` picks it
   up. Note that rebuilding also recreates the sampler (a few seconds' gap).
 - (Resolved in P1: Pending swaps are reconciled against devnet when the log

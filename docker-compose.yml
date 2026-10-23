@@ -7,6 +7,9 @@
 services:
   postgres:
     image: postgres:16
+    # Comes back with Docker, as the sampler does; without it a Docker restart
+    # left the sampler running against no database (2026-10-16, ~45 min lost).
+    restart: unless-stopped
     environment:
       POSTGRES_USER: dev
       POSTGRES_PASSWORD: devpassword

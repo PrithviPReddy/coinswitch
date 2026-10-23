@@ -41,8 +41,14 @@ What it does, in order:
 - a **time-based** train/test split (70/30 by time, never random)
 - the **impact table** recomputed over all data, deep and thin separately,
   plus impact curves on log axes
-- power-law impact per pair with a ridge baseline; a ridge drift model with a
-  train-mean baseline; empirical failure probabilities
+- power-law impact per pair with a ridge baseline. Each pair may instead
+  get a continuous two-segment power law (a hinge in log-log space, with
+  the knot at a rung), kept only if it beats the single line on the latest
+  20% of that pair's training rows when both are fitted on the earliest 80%.
+  The test split is never used to choose. Test MAE is reported for both,
+  overall and at $200k and up.
+- a ridge drift model with a train-mean baseline; empirical failure
+  probabilities
 - test-period metrics with **an n on every number**, a calibration table, and
   gradient-boosted trees for comparison only
 - the **directional test** (does B/A drift mirror A/B?) wherever both

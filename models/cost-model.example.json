@@ -1,9 +1,9 @@
 {
  "kind": "coinswitch-cost-model",
  "schemaVersion": 1,
- "modelVersion": "example-cost-20261016T1128Z-c1df57e7",
+ "modelVersion": "example-cost-20261023T0824Z-c3d9db59",
  "producer": "ts-reference-fit (example only)",
- "trainedAt": "2026-10-16T11:28:03.532Z",
+ "trainedAt": "2026-10-23T08:24:35.985Z",
  "datasetRowCounts": {
   "quoteSamples": 8922,
   "quoteDrift": 2335
@@ -92,28 +92,84 @@
     "b": 0.9753008958648413,
     "n": 149,
     "notionalMinUsd": 100,
-    "notionalMaxUsd": 1000000
+    "notionalMaxUsd": 1000000,
+    "segments": [
+     {
+      "fromUsd": 0,
+      "a": 0.9852817639492355,
+      "b": -0.11992925547431901,
+      "n": 37
+     },
+     {
+      "fromUsd": 2000,
+      "a": 0.4225927600394852,
+      "b": 1.1013390489921215,
+      "n": 112
+     }
+    ]
    },
    "SOL/USDC": {
     "a": 0.6734538676444963,
     "b": 0.23370668167106345,
     "n": 242,
     "notionalMinUsd": 105.092304,
-    "notionalMaxUsd": 1068195.438111
+    "notionalMaxUsd": 1068195.438111,
+    "segments": [
+     {
+      "fromUsd": 0,
+      "a": 0.9138513056285807,
+      "b": 0.07753155982869418,
+      "n": 202
+     },
+     {
+      "fromUsd": 213205.691398,
+      "a": 0.0024267288930630926,
+      "b": 1.1836186475690476,
+      "n": 40
+     }
+    ]
    },
    "SOL/USDT": {
     "a": 0.8048061758446992,
     "b": 0.19158480712971043,
     "n": 256,
     "notionalMinUsd": 105.204992,
-    "notionalMaxUsd": 1068195.438111
+    "notionalMaxUsd": 1068195.438111,
+    "segments": [
+     {
+      "fromUsd": 0,
+      "a": 1.1970201807780751,
+      "b": -0.049544022425795524,
+      "n": 148
+     },
+     {
+      "fromUsd": 42552.55520000001,
+      "a": 0.07920062454338324,
+      "b": 0.6744748243300591,
+      "n": 108
+     }
+    ]
    },
    "USDC/SOL": {
     "a": 0.8251775123047713,
     "b": 0.19271279700405627,
     "n": 294,
     "notionalMinUsd": 105.07543,
-    "notionalMaxUsd": 1068195.438111
+    "notionalMaxUsd": 1068195.438111,
+    "segments": [
+     {
+      "fromUsd": 0,
+      "a": 1.0556409058368899,
+      "b": 0.0027480481297890626,
+      "n": 185
+     },
+     {
+      "fromUsd": 42505.033287,
+      "a": 0.09136876668509707,
+      "b": 0.6553469848963938,
+      "n": 109
+     }
+    ]
    },
    "USDC/USDT": {
     "a": 0.7036738659406245,
@@ -127,7 +183,21 @@
     "b": 0.021895456885852718,
     "n": 188,
     "notionalMinUsd": 105.198633,
-    "notionalMaxUsd": 42636.724134
+    "notionalMaxUsd": 42636.724134,
+    "segments": [
+     {
+      "fromUsd": 0,
+      "a": 1.191781092315765,
+      "b": 0.0837692216019704,
+      "n": 41
+     },
+     {
+      "fromUsd": 2124.394761,
+      "a": 1.277356493822109,
+      "b": -0.008261303138128936,
+      "n": 147
+     }
+    ]
    },
    "USDT/USDC": {
     "a": 1.0865515575974642,
@@ -141,7 +211,21 @@
     "b": 0.7181640751991658,
     "n": 191,
     "notionalMinUsd": 100,
-    "notionalMaxUsd": 1000000
+    "notionalMaxUsd": 1000000,
+    "segments": [
+     {
+      "fromUsd": 0,
+      "a": 12.601898491920947,
+      "b": 0.5756587491232092,
+      "n": 110
+     },
+     {
+      "fromUsd": 10000,
+      "a": 6.507113467615892,
+      "b": 0.8627063463834869,
+      "n": 81
+     }
+    ]
    }
   },
   "byDepth": {
@@ -157,7 +241,21 @@
     "b": 0.7947833441555224,
     "n": 535,
     "notionalMinUsd": 100,
-    "notionalMaxUsd": 1000000
+    "notionalMaxUsd": 1000000,
+    "segments": [
+     {
+      "fromUsd": 0,
+      "a": 7.099738198484938,
+      "b": 0.4748018944419378,
+      "n": 286
+     },
+     {
+      "fromUsd": 10000,
+      "a": 1.760572126497014,
+      "b": 1.0803904071350745,
+      "n": 249
+     }
+    ]
    }
   },
   "cells": [
@@ -7428,6 +7526,18 @@
    "powerLaw": {
     "deep": {
      "n": 1057,
+     "mae": 0.9418768700663074,
+     "rmse": 1.2823175660242054
+    },
+    "thin": {
+     "n": 1026,
+     "mae": 139.7270401437582,
+     "rmse": 398.7267393730621
+    }
+   },
+   "powerLawSingle": {
+    "deep": {
+     "n": 1057,
      "mae": 1.4214484508160226,
      "rmse": 2.3774638730294457
     },
@@ -7447,6 +7557,32 @@
      "n": 1026,
      "mae": 1039.602873491501,
      "rmse": 1596.6222770606598
+    }
+   }
+  },
+  "impactTail200k": {
+   "powerLaw": {
+    "deep": {
+     "n": 302,
+     "mae": 1.1042405058160254,
+     "rmse": 1.636748662257292
+    },
+    "thin": {
+     "n": 294,
+     "mae": 442.8877914905708,
+     "rmse": 741.5091051533085
+    }
+   },
+   "powerLawSingle": {
+    "deep": {
+     "n": 302,
+     "mae": 3.0229284633010063,
+     "rmse": 4.1350927018548225
+    },
+    "thin": {
+     "n": 294,
+     "mae": 586.8262439577632,
+     "rmse": 803.8748211866155
     }
    }
   },
@@ -8715,7 +8851,7 @@
     "volatility": 2.5
    },
    "expected": {
-    "impactBps": 0.39318882833926155,
+    "impactBps": 0.7644410085971856,
     "driftAdverseBps": 0.4350339155116344,
     "failureProbability": 0,
     "coverage": {
@@ -8734,7 +8870,7 @@
     "volatility": null
    },
    "expected": {
-    "impactBps": 3.38398084790115,
+    "impactBps": 8.627345759210897,
     "driftAdverseBps": 0.9070912989011549,
     "failureProbability": 0,
     "coverage": {
@@ -8753,7 +8889,7 @@
     "volatility": 3
    },
    "expected": {
-    "impactBps": 1.6799054768468864,
+    "impactBps": 1.0663965923938037,
     "driftAdverseBps": 0.8183577547574922,
     "failureProbability": 0,
     "coverage": {
@@ -8829,7 +8965,7 @@
     "volatility": 5
    },
    "expected": {
-    "impactBps": 69.00604447099253,
+    "impactBps": 47.43454358770567,
     "driftAdverseBps": 0.7681787726339818,
     "failureProbability": 0,
     "coverage": {
@@ -8848,7 +8984,7 @@
     "volatility": 8
    },
    "expected": {
-    "impactBps": 3100.303514079114,
+    "impactBps": 4583.612621759693,
     "driftAdverseBps": 2.7695432014211723,
     "failureProbability": 0,
     "coverage": {
@@ -8867,7 +9003,7 @@
     "volatility": 4
    },
    "expected": {
-    "impactBps": 27.84115055045298,
+    "impactBps": 24.56593393794505,
     "driftAdverseBps": 1.4570150427037478,
     "failureProbability": 0,
     "coverage": {
@@ -8905,7 +9041,7 @@
     "volatility": null
    },
    "expected": {
-    "impactBps": 161.13828132944275,
+    "impactBps": 120.56041006588639,
     "driftAdverseBps": 0.710485779077447,
     "failureProbability": 0,
     "coverage": {
