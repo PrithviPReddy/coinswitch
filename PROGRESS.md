@@ -534,10 +534,31 @@ unit tests.
   It mirrors the TS line by line; `validate:model`'s self-test vectors
   check its inference against TypeScript when the artifact comes back.
 
+### Collection, 16-23 October
+- Totals on 2026-10-23 07:40 UTC: **30,159 quote samples and 6,287 drift
+  rows**, about double the 16th.
+- **After the 16th, collection was fragmentary.** Between 16 Oct 14:25 and
+  23 Oct 07:39 UTC the sampler recorded in about 21 hours out of 161:
+  - long gaps of 4 to 41 hours;
+  - between them, short bursts about every 1.3 h, which look like the Mac's
+    dark wakes while asleep;
+  - Docker Desktop quit at 14:24 UTC on the 21st, giving the longest gap
+    (41.3 h).
+  - It was restarted on 2026-10-23 07:38 UTC; Postgres and the sampler came
+    back on their own. `caffeinate -w` doesn't prevent lid-close sleep.
+- **Consequence for the final fit:** the extra data spans several days,
+  which helps with "one regime". But much of it is short bursts.
+  - Realised volatility needs 8 returns within 30 minutes, so rows at the
+    start of a burst get no volatility and fall back.
+  - Expect more `fallback` coverage on drift than continuous collection
+    would give.
+
 ## Demo-day checklist (add to it as things come up)
 
 - [ ] Docker Desktop running, and `docker compose ps` shows postgres and
-      sampler up. (It quit once overnight; both now restart with it.)
+      sampler up. (It has quit twice; both now restart with it.)
+- [ ] For continuous collection the Mac must not sleep: lid open on power,
+      or sleep disabled in settings. `caffeinate` alone did not hold it.
 - [ ] `docker compose up --build`: the app image predates P1.
 - [ ] `npm run build:fill-model`, then commit the artifact version used
       (the startup log prints the version and its age, and warns over 12 h).
