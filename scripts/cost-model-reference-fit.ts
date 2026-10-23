@@ -66,6 +66,8 @@ const RIDGE_ALPHA = 1.0;
 const IMPACT_TAIL_USD = 200_000;
 /** Share of the training rows, earliest first, that the single-or-hinge choice is fitted on. */
 const VALIDATION_FRACTION = 0.8;
+/** Bound on |log10 a| and |b| for a hinge segment to count as a fit at all. */
+const PIECEWISE_LIMIT = 10;
 const TRAIN_FRACTION = 0.7;
 
 // Collection phases, for the drift coverage table.
@@ -138,8 +140,13 @@ const ridgePredict = (r: ReturnType<typeof fitRidge>, x: number[]) =>
  *   log10 I = c + b1 u + (b2 - b1) max(0, u - k),   u = log10(N / 1000),
  *
  * with the knot k at one of the rungs' median u, fitted by OLS for each
- * candidate knot; the knot with the least squared error wins. Each side needs
- * MIN_CONFIDENT_N rows. Returns the segments, or null when no knot qualifies.
+ * candidate knot; the knot with the least squared error wins. A knot needs
+ * MIN_CONFIDENT_N rows on each side and a rung strictly on each side: at the
+ * top rung, the rows "above" it differ in size only by price moves, and the
+ * slope fitted to them is meaningless (and overflowed in the notebook). Fits
+ * whose coefficients are not finite or not plausible (|log10 a| or |b| over
+ * PIECEWISE_LIMIT) are skipped. Returns the segments, or null when no knot
+ * qualifies.
  * Whether the hinge is used at all is decided by selectImpactFit.
  */
 function fitPiecewise(rows: { n: number; impact: number; rung: number }[]): PowerLaw["segments"] | null {
@@ -160,12 +167,18 @@ function fitPiecewise(rows: { n: number; impact: number; rung: number }[]): Powe
   const rungs = [...new Set(fit.map((r) => r.rung))].sort((a, b) => a - b);
   let best: { k: number; beta: number[]; sse: number } | null = null;
   for (const rung of rungs) {
+    if (rung === rungs[0] || rung === rungs[rungs.length - 1]) continue;
     const us = fit.flatMap((r, i) => (r.rung === rung ? [u[i]] : [])).sort((a, b) => a - b);
     const k = us[Math.floor(us.length / 2)];
     const below = u.filter((x) => x <= k).length;
     if (below < MIN_CONFIDENT_N || N - below < MIN_CONFIDENT_N) continue;
     const h = sse(u.map((x) => [1, x, Math.max(0, x - k)]));
-    if (h.beta.every(Number.isFinite) && (!best || h.sse < best.sse)) best = { k, ...h };
+    const [c, b1, d] = h.beta;
+    const plausible =
+      h.beta.every(Number.isFinite) &&
+      Math.abs(c) <= PIECEWISE_LIMIT && Math.abs(c - d * k) <= PIECEWISE_LIMIT &&
+      Math.abs(b1) <= PIECEWISE_LIMIT && Math.abs(b1 + d) <= PIECEWISE_LIMIT;
+    if (plausible && (!best || h.sse < best.sse)) best = { k, ...h };
   }
   if (!best) return null;
 

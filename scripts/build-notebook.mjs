@@ -324,13 +324,17 @@ def fit_power_law(notional, impact):
             "notionalMinUsd": float(notional.min()), "notionalMaxUsd": float(notional.max())}
 
 VALIDATION_FRACTION = 0.8   # share of the training rows, earliest first, the single-or-hinge choice is fitted on
+PIECEWISE_LIMIT = 10        # bound on |log10 a| and |b| for a hinge segment to count as a fit
 IMPACT_TAIL_USD = 200_000
 
 def fit_piecewise(notional, impact, rung):
     """A continuous hinge in log10 space, the same as the TypeScript reference fit:
        log10 I = c + b1 u + (b2 - b1) max(0, u - k),  u = log10(N/1000),
-    with the knot k at one rung's median u (least squared error wins) and at least
-    MIN_CONFIDENT_N fitted rows on each side. Returns the contract's segments, or None."""
+    with the knot k at one rung's median u (least squared error wins), at least
+    MIN_CONFIDENT_N fitted rows on each side and a rung strictly on each side (at the top
+    rung the rows above the knot differ only by price moves, and the slope fitted to them
+    is meaningless). Fits with |log10 a| or |b| over PIECEWISE_LIMIT are skipped. Returns
+    the contract's segments, or None."""
     mask = (impact > IMPACT_FLOOR_BPS) & (notional > 0)
     u = np.log10(notional[mask] / 1000.0)
     y = np.log10(impact[mask])
@@ -339,7 +343,10 @@ def fit_piecewise(notional, impact, rung):
     if N < 2 * MIN_CONFIDENT_N:
         return None
     best = None
-    for g in sorted(set(int(x) for x in r)):
+    rungs = sorted(set(int(x) for x in r))
+    for g in rungs:
+        if g == rungs[0] or g == rungs[-1]:
+            continue
         us = np.sort(u[r == g])
         k = us[len(us) // 2]
         below = int((u <= k).sum())
@@ -348,7 +355,11 @@ def fit_piecewise(notional, impact, rung):
         X = np.column_stack([np.ones(N), u, np.maximum(0.0, u - k)])
         beta = np.linalg.lstsq(X, y, rcond=None)[0]
         sse = float(((y - X @ beta) ** 2).sum())
-        if np.all(np.isfinite(beta)) and (best is None or sse < best[2]):
+        c_, b1_, d_ = (float(v) for v in beta)
+        plausible = (bool(np.all(np.isfinite(beta)))
+                     and abs(c_) <= PIECEWISE_LIMIT and abs(c_ - d_ * float(k)) <= PIECEWISE_LIMIT
+                     and abs(b1_) <= PIECEWISE_LIMIT and abs(b1_ + d_) <= PIECEWISE_LIMIT)
+        if plausible and (best is None or sse < best[2]):
             best = (float(k), beta, sse)
     if best is None:
         return None
