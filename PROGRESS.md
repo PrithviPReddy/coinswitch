@@ -627,6 +627,11 @@ unit tests.
 
 ## In progress
 
+- **Sampler stopped on request, 2026-10-23 08:30 UTC** (`npm run sampler:pause`).
+  Final counts: 31,365 quote samples, 6,558 drift rows. The `caffeinate` that
+  kept the Mac awake for it was ended too. Postgres keeps running for the app.
+  `npm run sampler:resume` restarts collection; the notes below are historical.
+
 - **Sampler v2 running in Docker** since 2026-10-16 08:29:15 UTC.
   - **Pause for the live demo** (required until the sampler has its own key):
     `npm run sampler:pause`
