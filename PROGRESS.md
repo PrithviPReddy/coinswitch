@@ -604,8 +604,11 @@ unit tests.
       sampler up. (It has quit twice; both now restart with it.)
 - [ ] For continuous collection the Mac must not sleep: lid open on power,
       or sleep disabled in settings. `caffeinate` alone did not hold it.
-- [ ] `docker compose up --build`: the app image predates P1.
-- [ ] `npm run build:fill-model`, then commit the artifact version used
+- [x] App image rebuilt and container recreated (2026-10-23; `docker compose build app`, then
+      `up -d --no-deps app` so the stopped sampler stays stopped). Serves the Colab model.
+- [x] Fill model rebuilt from the full week (`fill-q-20261023T0833Z-be9f5fce`), committed;
+      rebuild again if the demo is more than 12 h after the last collection. Was:
+      `npm run build:fill-model`, then commit the artifact version used
       (the startup log prints the version and its age, and warns over 12 h).
 - [x] Colab model at `models/cost-model.json`, validated, served (no
       "example artifact" label).
