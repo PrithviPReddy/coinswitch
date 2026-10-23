@@ -618,6 +618,18 @@ def predict(m, inp):
 
   code(String.raw`
 # 13. Assemble the model (metrics need the predictors, which need the model).
+# Everything below comes from earlier cells. If one of them stopped with an error (or was
+# skipped), say which, rather than failing with a bare NameError.
+_needed = {"cells_df": 8, "per_pair": 9, "by_depth": 9, "impact_ridge": 9, "d_means": 10, "d_stds": 10,
+           "drift_ridge": 10, "vol_fallback_pair": 10, "vol_fallback_depth": 10, "drift_cells": 10,
+           "short_cells": 11, "vol_tertiles": 11}
+_missing = sorted({cell for name, cell in _needed.items() if name not in globals()})
+if _missing:
+    raise RuntimeError(
+        "Cell(s) " + ", ".join(str(c) for c in _missing) + " did not finish, so the model cannot be assembled. "
+        "Scroll up: if one of them shows an error, that is the error to fix (paste it back). "
+        "Otherwise use Runtime > Run all, which runs every cell in order and stops at the first error.")
+
 model = {
     "kind": "coinswitch-cost-model", "schemaVersion": 1, "modelVersion": "pending",
     "producer": "colab:notebooks/train_cost_model.ipynb",
