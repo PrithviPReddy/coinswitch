@@ -553,6 +553,51 @@ unit tests.
   - Expect more `fallback` coverage on drift than continuous collection
     would give.
 
+### Final run on the Colab model (2026-10-23)
+- **Model:** `cost-20261023T0821Z-33e5b1ec` (models/cost-model.json).
+  - Trained on 30,546 samples and 6,371 drift rows to 23 Oct 07:53 UTC; split
+    at 17 Oct 11:00 UTC.
+  - `validate:model` passes: schema, 13/13 self tests, 5/5 feature tests.
+  - The app serves it (example=false).
+- **First Colab run broke twice in the notebook, both fixed:**
+  1. Cell 13: a NameError, because cell 10 had not run. Cell 13 now names
+     the missing cell.
+  2. Cell 9: an overflow, from a hinge knot at the top rung. Knots now need a
+     rung on each side, and implausible fits are skipped.
+- **Impact, test MAE:**
+  - deep 1.15 (piecewise) vs 1.40 (single) vs 1.97 (ridge), n=3,594
+  - thin 131.9 vs 170.6 vs 1,011.7, n=3,490
+  - ≥$200k: deep 1.45 vs 2.75, thin 426.6 vs 555.1
+  - Gradient-boosted trees: deep 0.86 (better), thin 600.7 (far worse).
+  - Hinges for the three SOL pairs (~$42k), JUP ($2k) and WIF ($40k);
+    BONK keeps the single line.
+- **Drift finding changed:** the ridge now beats the train mean on MAE (deep
+  1.83 vs 2.02, n=371; thin 3.39 vs 3.76, n=345). Thin RMSE is a tie
+  (17.00 vs 16.98). The README now says "a modest signal about size",
+  replacing "not predictable beyond its mean".
+- **Backtest** (`--until 2026-10-23T07:53:50.433Z`, 1,750 held-out orders
+  per cap: 994 deep, 756 thin):
+  - Regret 2×2 (thin ≥$10k, n=432, cap 50): +201.9 / −0.7 (worst 5% −25.9);
+    ρ = 0 row 0. The asymmetry holds; ρ = 1 stays.
+  - **Deep $1M: SPLIT 142 of 142.** Predicted impact 7.96 vs 7.87 recorded,
+    saving a median 6.8 of 7.9 bps, 8 worse than one order. SOL/USDC 43 of
+    43. The app advises 10,000 SOL → USDC as 6 × 60 s at 4.8 vs 7.6 bps.
+  - Deep $200k: 134 of 142 split, a marginal call (median +1.1, 28 worse).
+  - **Low confidence: thin 83% (was 100%)**, deep 60%. 529 of 630 thin
+    SPLIT plans are extrapolated beyond the 60 s horizon.
+  - **TIGHTEN (cap 5):**
+    - thin: 98 chosen, unfilled 1 vs 4, cost +0.50 (CI −0.29 to +1.80)
+    - **deep: 504 chosen, unfilled 23 vs 10.** 11 of the 23 are missing
+      recorded windows (counted failed); 12 are USDC/SOL at 1.25 bps × 3.
+    - The deep benefit did not replicate. Reported as mixed.
+  - **DEFER:** never triggered on the Colab model. Only 637 of 994 deep
+    and 399 of 756 thin orders had a known volatility.
+- The Colab outputs (figures, impact table, drift coverage, directional
+  test) were copied to `reports/model/`. The zip they came in is in
+  `models/` and not committed.
+- The example was regenerated with the knot guard; only legacy USDT/SOL
+  changed.
+
 ## Demo-day checklist (add to it as things come up)
 
 - [ ] Docker Desktop running, and `docker compose ps` shows postgres and
@@ -562,11 +607,9 @@ unit tests.
 - [ ] `docker compose up --build`: the app image predates P1.
 - [ ] `npm run build:fill-model`, then commit the artifact version used
       (the startup log prints the version and its age, and warns over 12 h).
-- [ ] Put the final Colab `cost-model.json` at `models/cost-model.json` and
-      run `npm run validate:model`. The advice panel must **not** say
-      "example artifact" (the startup log names the model it serves).
-- [ ] Re-run `npm run backtest -- --until <time>` on the Colab model and
-      commit `reports/backtest/`; update the README's result tables.
+- [x] Colab model at `models/cost-model.json`, validated, served (no
+      "example artifact" label).
+- [x] Backtest re-run on the Colab model, committed; README updated.
 - [ ] `npm run sampler:pause`, unless the dedicated key has arrived.
 - [ ] Confirm the vault holds enough of all six tokens for the planned
       trades. `npm run setup:devnet` restocks tokens to about $5M each, but
@@ -574,9 +617,9 @@ unit tests.
 - [ ] Have one settled thin-pair swap already open in a Solscan tab, as a
       fallback.
 - [ ] Rehearse the advice panel: SOL → USDC small (SEND_NOW), then
-      10,000 SOL → USDC (~$1M, SPLIT on a real pair; re-check it on the
-      Colab model), then 10,000,000,000 BONK → USDC (~$30k, SPLIT, low
-      confidence, the live-vs-model impact line). Be ready to explain both "low confidence"
+      10,000 SOL → USDC (~$1M, SPLIT 6 × 60 s on a real pair), then
+      10,000,000,000 BONK → USDC (~$30k, SPLIT, low confidence, the
+      live-vs-model impact line). Be ready to explain both "low confidence"
       and "assumes ρ = 1".
 - [ ] If Jupiter rate limits the app ("Wait a moment and retry"), the sampler
       is still running: pause it.
@@ -597,7 +640,7 @@ unit tests.
 
 ## Blocked / open
 
-- **Waiting on the final Colab fit.** Then report:
+- (Done 2026-10-23.) The final Colab fit, reported:
   - validation
   - both backtest runs
   - the low-confidence change (thin will likely stay near 100% from the

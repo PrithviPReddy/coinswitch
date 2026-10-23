@@ -1,9 +1,9 @@
 {
  "kind": "coinswitch-cost-model",
  "schemaVersion": 1,
- "modelVersion": "example-cost-20261017T0050Z-34ceabdb",
+ "modelVersion": "example-cost-20261023T0824Z-c3d9db59",
  "producer": "ts-reference-fit (example only)",
- "trainedAt": "2026-10-17T00:50:11.282Z",
+ "trainedAt": "2026-10-23T08:24:35.985Z",
  "datasetRowCounts": {
   "quoteSamples": 8922,
   "quoteDrift": 2335
@@ -183,7 +183,21 @@
     "b": 0.021895456885852718,
     "n": 188,
     "notionalMinUsd": 105.198633,
-    "notionalMaxUsd": 42636.724134
+    "notionalMaxUsd": 42636.724134,
+    "segments": [
+     {
+      "fromUsd": 0,
+      "a": 1.191781092315765,
+      "b": 0.0837692216019704,
+      "n": 41
+     },
+     {
+      "fromUsd": 2124.394761,
+      "a": 1.277356493822109,
+      "b": -0.008261303138128936,
+      "n": 147
+     }
+    ]
    },
    "USDT/USDC": {
     "a": 1.0865515575974642,

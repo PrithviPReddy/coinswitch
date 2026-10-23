@@ -1,0 +1,25 @@
+phase,depth,horizonSeconds,originSets,onTime,onTimePct,n
+1 v1,deep,5,489,172,35.2,489
+1 v1,deep,15,489,214,43.8,489
+1 v1,deep,30,489,377,77.1,489
+1 v1,deep,60,489,442,90.4,489
+1 v1,thin,5,0,0,,0
+1 v1,thin,15,0,0,,0
+1 v1,thin,30,0,0,,0
+1 v1,thin,60,0,0,,0
+2 v2 before limiter fix,deep,5,96,13,13.5,96
+2 v2 before limiter fix,deep,15,96,92,95.8,96
+2 v2 before limiter fix,deep,30,96,95,99.0,96
+2 v2 before limiter fix,deep,60,96,92,95.8,96
+2 v2 before limiter fix,thin,5,94,54,57.4,94
+2 v2 before limiter fix,thin,15,94,83,88.3,94
+2 v2 before limiter fix,thin,30,94,88,93.6,94
+2 v2 before limiter fix,thin,60,94,90,95.7,94
+3 v2 after limiter fix,deep,5,654,470,71.9,654
+3 v2 after limiter fix,deep,15,654,531,81.2,654
+3 v2 after limiter fix,deep,30,654,585,89.4,654
+3 v2 after limiter fix,deep,60,654,592,90.5,654
+3 v2 after limiter fix,thin,5,648,395,61.0,648
+3 v2 after limiter fix,thin,15,648,560,86.4,648
+3 v2 after limiter fix,thin,30,648,512,79.0,648
+3 v2 after limiter fix,thin,60,648,618,95.4,648
